@@ -1,6 +1,6 @@
 {
   "name": "Liga San Juan del Paraná",
-  "short_name": "Liga San Juan del Paraná",
+  "short_name": "Liga SJP",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

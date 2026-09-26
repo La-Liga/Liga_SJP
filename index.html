@@ -74,23 +74,41 @@ body.admin-mode .lock-note{display:none;}
 </head>
 <body>
 <div class="wrap">
-  <h1>Liga San Juan del Paraná</h1>
-  <p class="sub">Equipos, jugadores, partidos y posiciones de la liga</p>
-  <p class="empty" id="sync-status">🔄 Conectando...</p>
-
-  <div class="card">
-    <div id="admin-locked">
-      <label>Contraseña de administrador</label>
-      <div class="row"><input type="password" id="admin-pass" placeholder="Contraseña"><button class="btn small" onclick="login()">Ingresar</button></div>
-      <p class="empty" id="admin-err" style="display:none">Contraseña incorrecta.</p>
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+    <div>
+      <h1>Liga San Juan del Paraná</h1>
+      <p class="sub">Equipos, jugadores, partidos y posiciones de la liga</p>
+      <p class="empty" id="sync-status">🔄 Conectando...</p>
     </div>
-    <div id="admin-unlocked" style="display:none">
-      <span class="badge ok">Administrador</span>
-      <button class="link" onclick="toggleChangePass()">Cambiar contraseña</button>
-      <button class="link danger" onclick="logout()">Salir</button>
-      <div id="change-pass" style="display:none;margin-top:10px">
-        <div class="row"><input type="password" id="new-pass" placeholder="Nueva contraseña"><button class="btn small" onclick="changePass()">Guardar</button></div>
+    <button onclick="toggleSettingsPanel()" title="Configuración" style="background:var(--surface);border:1px solid var(--border);border-radius:50%;width:44px;height:44px;font-size:1.2rem;cursor:pointer;flex-shrink:0">⚙️</button>
+  </div>
+
+  <div id="settings-panel" style="display:none">
+    <div class="card">
+      <h2>Administrador</h2>
+      <div id="admin-locked">
+        <label>Contraseña de administrador</label>
+        <div class="row"><input type="password" id="admin-pass" placeholder="Contraseña"><button class="btn small" onclick="login()">Ingresar</button></div>
+        <p class="empty" id="admin-err" style="display:none">Contraseña incorrecta.</p>
       </div>
+      <div id="admin-unlocked" style="display:none">
+        <span class="badge ok">Administrador</span>
+        <button class="link" onclick="toggleChangePass()">Cambiar contraseña</button>
+        <button class="link danger" onclick="logout()">Salir</button>
+        <div id="change-pass" style="display:none;margin-top:10px">
+          <div class="row"><input type="password" id="new-pass" placeholder="Nueva contraseña"><button class="btn small" onclick="changePass()">Guardar</button></div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Presidente / delegado de equipo</h2>
+      <div class="grid">
+        <div class="full"><label>Equipo</label><select id="settings-team-select"></select></div>
+        <div class="full"><label>Contraseña</label><input type="password" id="settings-team-pass"></div>
+      </div>
+      <button class="btn" onclick="settingsTeamLogin()">Ingresar</button>
+      <p class="empty" id="settings-team-msg" style="display:none"></p>
+      <div id="settings-unlocked-list" style="margin-top:10px"></div>
     </div>
   </div>
 
@@ -103,87 +121,88 @@ body.admin-mode .lock-note{display:none;}
 
   <nav>
     <button class="tab-btn active" data-tab="equipos">Equipos</button>
-    <button class="tab-btn" data-tab="jugadores">Jugadores</button>
     <button class="tab-btn" data-tab="partidos">Partidos</button>
+    <button class="tab-btn" data-tab="resultados">Resultados</button>
+    <button class="tab-btn" data-tab="tabla">Tabla</button>
+    <button class="tab-btn" data-tab="disciplina">Disciplina</button>
+    <button class="tab-btn" data-tab="eliminatorias">Eliminatorias</button>
     <button class="tab-btn" data-tab="goleadores">Goleadores</button>
     <button class="tab-btn" data-tab="transferencias">Transferencias</button>
-    <button class="tab-btn" data-tab="disciplina">Disciplina</button>
     <button class="tab-btn" data-tab="reglamento">Reglamento</button>
-    <button class="tab-btn" data-tab="tabla">Tabla</button>
   </nav>
 
   <!-- EQUIPOS -->
   <div class="panel active" id="panel-equipos">
-    <div class="card">
-      <h2 id="team-form-title">Agregar equipo</h2>
-      <div class="grid">
-        <div><label>Nombre del equipo</label><input id="t-name"></div>
-        <div><label>Teléfono</label><input id="t-phone"></div>
-        <div class="full"><label>Email</label><input id="t-email"></div>
-        <div class="full"><label>Contraseña del equipo</label><input type="password" id="t-pin" placeholder="La usa el presidente para editar este equipo después"></div>
+    <div class="card" id="team-add-card" style="display:none">
+      <button class="btn admin-only" onclick="toggleTeamForm()">+ Agregar equipo</button>
+      <div id="team-form-fields" style="display:none">
+        <h2 id="team-form-title">Agregar equipo</h2>
+        <div class="grid">
+          <div><label>Nombre del equipo</label><input id="t-name"></div>
+          <div><label>Teléfono</label><input id="t-phone"></div>
+          <div class="full"><label>Email</label><input id="t-email"></div>
+          <div class="full"><label>Contraseña del equipo</label><input type="password" id="t-pin" placeholder="La usa el presidente para editar este equipo después"></div>
+          <div class="full"><label>Grupo</label><select id="t-group"><option value="">Sin asignar</option><option value="A">Grupo A</option><option value="B">Grupo B</option></select></div>
+        </div>
+        <div class="row">
+          <button class="btn" onclick="saveTeam()">Guardar equipo</button>
+          <button class="btn ghost" id="t-cancel" style="display:none" onclick="cancelTeamEdit()">Cancelar</button>
+        </div>
+        <p class="empty" id="t-err" style="display:none"></p>
       </div>
-      <div class="row">
-        <button class="btn" onclick="saveTeam()">Guardar equipo</button>
-        <button class="btn ghost" id="t-cancel" style="display:none" onclick="cancelTeamEdit()">Cancelar</button>
-      </div>
-      <p class="empty" id="t-err" style="display:none"></p>
     </div>
     <div class="card">
       <h2>Equipos registrados</h2>
-      <p class="lock-note">Solo el presidente de cada equipo (con su contraseña) o el administrador pueden editarlo o borrarlo.</p>
       <div id="teams-list"></div>
     </div>
   </div>
 
 
-  <!-- JUGADORES -->
-  <div class="panel" id="panel-jugadores">
-    <div class="card">
-      <h2 id="player-form-title">Agregar jugador</h2>
-      <div class="grid">
-        <div class="full"><label>Nombre</label><input id="p-name"></div>
-        <div><label>Equipo</label><select id="p-team"></select></div>
-        <div><label>Fecha de nacimiento</label><input type="date" id="p-birthdate"></div>
-        <div class="full"><label>Número de documento</label><input id="p-document" placeholder="Ej: 30123456"></div>
-      </div>
-      <p class="empty" id="p-dup-warning" style="display:none"></p>
-      <p class="empty" id="p-locked-note" style="display:none">Para agregar o editar jugadores, primero desbloqueá tu equipo con su contraseña en la pestaña Equipos.</p>
-      <div class="row">
-        <button class="btn" id="p-save-btn" onclick="savePlayer()">Guardar jugador</button>
-        <button class="btn ghost" id="p-cancel" style="display:none" onclick="cancelPlayerEdit()">Cancelar</button>
-      </div>
-    </div>
-    <div class="card"><h2>Jugadores</h2><div id="players-list"></div></div>
-  </div>
-
   <!-- PARTIDOS -->
   <div class="panel" id="panel-partidos">
     <div class="card admin-only">
-      <h2>Generar fixture automático</h2>
-      <div class="grid">
-        <div><label>Fecha de la 1ª fecha</label><input type="date" id="fx-start"></div>
-        <div><label>Días entre fechas</label><input type="number" min="1" value="7" id="fx-interval"></div>
-        <div class="full"><label><input type="checkbox" id="fx-roundtrip"> Ida y vuelta</label></div>
+      <button class="btn ghost" onclick="toggleFixtureForm()">+ Generar fixture automático</button>
+      <div id="fixture-form-fields" style="display:none;margin-top:12px">
+        <div class="grid">
+          <div><label>Fecha de la 1ª fecha</label><input type="date" id="fx-start"></div>
+          <div><label>Días entre fechas</label><input type="number" min="1" value="7" id="fx-interval"></div>
+          <div class="full"><label><input type="checkbox" id="fx-roundtrip"> Ida y vuelta</label></div>
+        </div>
+        <button class="btn" onclick="generateFixture()">Generar fixture</button>
+        <p class="empty" id="fx-msg" style="display:none"></p>
       </div>
-      <button class="btn" onclick="generateFixture()">Generar fixture</button>
-      <p class="empty" id="fx-msg" style="display:none"></p>
     </div>
     <div class="card admin-only">
-      <h2 id="match-form-title">Agregar partido</h2>
-      <div class="grid">
-        <div class="full"><label>Fecha</label><input type="date" id="m-date"></div>
-        <div><label>Local</label><select id="m-home"></select></div>
-        <div><label>Visitante</label><select id="m-away"></select></div>
-        <div><label>Goles local</label><input type="number" min="0" id="m-hscore"></div>
-        <div><label>Goles visitante</label><input type="number" min="0" id="m-ascore"></div>
-      </div>
-      <div class="row">
-        <button class="btn" onclick="saveMatch()">Guardar partido</button>
-        <button class="btn ghost" id="m-cancel" style="display:none" onclick="cancelMatchEdit()">Cancelar</button>
+      <button class="btn" onclick="toggleMatchForm()">+ Agregar partido</button>
+      <div id="match-form-fields" style="display:none;margin-top:12px">
+        <h2 id="match-form-title">Agregar partido</h2>
+        <div class="grid">
+          <div class="full"><label>Fase</label><select id="m-phase"><option value="grupos">Grupos</option><option value="octavos">Octavos de Final</option><option value="cuartos">Cuartos de Final</option><option value="semifinal">Semifinal</option><option value="final">Final</option></select></div>
+          <div class="full"><label>Fecha</label><input type="date" id="m-date"></div>
+          <div><label>Local</label><select id="m-home"></select></div>
+          <div><label>Visitante</label><select id="m-away"></select></div>
+          <div><label>Goles local</label><input type="number" min="0" id="m-hscore"></div>
+          <div><label>Goles visitante</label><input type="number" min="0" id="m-ascore"></div>
+          <div class="full"><label><input type="checkbox" id="m-protest"> Partido protestado</label></div>
+        </div>
+        <div class="row">
+          <button class="btn" onclick="saveMatch()">Guardar partido</button>
+          <button class="btn ghost" id="m-cancel" style="display:none" onclick="cancelMatchEdit()">Cancelar</button>
+        </div>
       </div>
     </div>
     <p class="lock-note">Solo el administrador puede cargar o editar resultados.</p>
     <div class="card"><h2>Partidos</h2><div id="matches-list"></div></div>
+  </div>
+
+  <!-- RESULTADOS -->
+  <div class="panel" id="panel-resultados">
+    <div class="card"><h2>Resultados anteriores</h2><div id="resultados-list"></div></div>
+  </div>
+
+  <!-- ELIMINATORIAS -->
+  <div class="panel" id="panel-eliminatorias">
+    <div class="card"><h2>Eliminatorias</h2><div id="bracket-view"></div></div>
   </div>
 
   <!-- GOLEADORES -->
@@ -272,6 +291,7 @@ body.admin-mode .lock-note{display:none;}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script>
 let state = {teams:[], matches:[], players:[], goals:[], windows:[], transfers:[], cards:[], fines:[], settings:{}};
 try{
@@ -284,14 +304,18 @@ function normalizeState(s){
   s.goals = s.goals || []; s.windows = s.windows || []; s.transfers = s.transfers || [];
   s.cards = s.cards || []; s.fines = s.fines || [];
   s.settings = s.settings || {};
+  s.teams.forEach(t=>{ if(t.group===undefined) t.group=''; });
+  s.matches.forEach(m=>{ if(!m.phase) m.phase='grupos'; if(m.protest===undefined) m.protest=false; });
   return s;
 }
+const PHASES = {grupos:'Grupos', octavos:'Octavos de Final', cuartos:'Cuartos de Final', semifinal:'Semifinal', final:'Final'};
+const PHASE_ORDER = ['octavos','cuartos','semifinal','final'];
 state = normalizeState(state);
 let reglamentoData = null;
 
 function persistLocal(){ try{ localStorage.setItem('liga-crm-data', JSON.stringify(state)); }catch(e){} }
 function renderAll(){
-  applyAdmin(); renderTeams(); renderPlayers(); renderMatches(); renderGoals(); renderCards(); renderFines(); renderWindows(); renderTransfers(); renderStandings();
+  applyAdmin(); renderTeams(); renderMatches(); renderResultados(); renderBracket(); renderGoals(); renderCards(); renderFines(); renderWindows(); renderTransfers(); renderStandings();
 }
 
 // ---- sync (Firebase Realtime Database) ----
@@ -309,6 +333,7 @@ try{
   firebase.initializeApp(firebaseConfig);
   fbDb2 = firebase.database();
   fbRef = fbDb2.ref('liga-data');
+  firebase.auth().signInAnonymously().catch(()=>{});
 }catch(e){}
 
 function persist(){
@@ -364,7 +389,46 @@ function applyAdmin(){
   document.body.classList.toggle('admin-mode', isAdmin);
   document.getElementById('admin-locked').style.display = isAdmin?'none':'block';
   document.getElementById('admin-unlocked').style.display = isAdmin?'block':'none';
+  const addCard = document.getElementById('team-add-card');
+  if(addCard) addCard.style.display = isAdmin ? 'block' : 'none';
   fillTransferSelects();
+  if(typeof renderTeams==='function' && document.getElementById('teams-list')) renderTeams();
+  renderSettingsPanel();
+}
+function toggleSettingsPanel(){
+  const el = document.getElementById('settings-panel');
+  if(!el) return;
+  el.style.display = el.style.display==='none' ? 'block' : 'none';
+  if(el.style.display==='block') renderSettingsPanel();
+}
+function renderSettingsPanel(){
+  const sel = document.getElementById('settings-team-select');
+  if(!sel) return;
+  fillSelect('settings-team-select', state.teams.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('') || '<option value="">Sin equipos</option>');
+  const mine = state.teams.filter(t=>unlockedTeams.has(t.id));
+  const list = document.getElementById('settings-unlocked-list');
+  if(list){
+    list.innerHTML = mine.length ? `<p class="empty">Ingresado como presidente de: ${mine.map(t=>`${esc(t.name)} <button class="link" onclick="settingsTeamLogout('${t.id}')">(salir)</button>`).join(', ')}</p>` : '';
+  }
+}
+function settingsTeamLogin(){
+  const teamId = document.getElementById('settings-team-select').value;
+  const val = document.getElementById('settings-team-pass').value;
+  const msg = document.getElementById('settings-team-msg');
+  const t = state.teams.find(x=>x.id===teamId);
+  msg.style.display='block';
+  if(t && t.pin && val===t.pin){
+    unlockedTeams.add(teamId); saveUnlockedTeams();
+    document.getElementById('settings-team-pass').value='';
+    msg.style.color='var(--primary)'; msg.textContent=`Ingresaste como presidente de ${t.name}.`;
+    renderTeams(); renderSettingsPanel();
+  } else {
+    msg.style.color='var(--danger)'; msg.textContent='Contraseña incorrecta.';
+  }
+}
+function settingsTeamLogout(teamId){
+  unlockedTeams.delete(teamId); saveUnlockedTeams();
+  renderTeams(); renderSettingsPanel();
 }
 function login(){
   const val = document.getElementById('admin-pass').value;
@@ -391,7 +455,8 @@ document.querySelectorAll('.tab-btn').forEach(b=>{
     b.classList.add('active');
     document.getElementById('panel-'+b.dataset.tab).classList.add('active');
     if(b.dataset.tab==='partidos') fillTeamSelects();
-    if(b.dataset.tab==='jugadores') renderPlayers();
+    if(b.dataset.tab==='resultados') renderResultados();
+    if(b.dataset.tab==='eliminatorias') renderBracket();
     if(b.dataset.tab==='goleadores') renderGoals();
     if(b.dataset.tab==='transferencias'){ renderWindows(); renderTransfers(); }
     if(b.dataset.tab==='disciplina'){ renderCards(); renderFines(); }
@@ -411,27 +476,35 @@ function saveTeam(){
   const name = document.getElementById('t-name').value.trim();
   if(!name) return;
   const pin = document.getElementById('t-pin').value;
+  const group = document.getElementById('t-group').value;
   const err = document.getElementById('t-err');
   err.style.display='none';
   if(editingTeamId){
     if(!canEditTeam(editingTeamId)) return;
     const t = state.teams.find(x=>x.id===editingTeamId);
-    t.name=name; t.phone=document.getElementById('t-phone').value.trim(); t.email=document.getElementById('t-email').value.trim();
+    t.name=name; t.phone=document.getElementById('t-phone').value.trim(); t.email=document.getElementById('t-email').value.trim(); t.group=group;
     if(pin) t.pin = pin;
   } else {
     if(!pin){ err.textContent='Elegí una contraseña para el equipo: la va a usar el presidente para editarlo después.'; err.style.display='block'; return; }
     const id = 't'+Date.now();
-    state.teams.push({id, name, phone:document.getElementById('t-phone').value.trim(), email:document.getElementById('t-email').value.trim(), pin});
+    state.teams.push({id, name, phone:document.getElementById('t-phone').value.trim(), email:document.getElementById('t-email').value.trim(), pin, group});
     unlockedTeams.add(id); saveUnlockedTeams();
   }
   persist(); cancelTeamEdit(); renderTeams();
 }
+function toggleTeamForm(){
+  const el = document.getElementById('team-form-fields');
+  if(el) el.style.display = el.style.display==='none' ? 'block' : 'none';
+}
 function cancelTeamEdit(){
   editingTeamId = null;
   ['t-name','t-phone','t-email','t-pin'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('t-group').value='';
   document.getElementById('t-err').style.display='none';
   document.getElementById('team-form-title').textContent='Agregar equipo';
   document.getElementById('t-cancel').style.display='none';
+  document.getElementById('team-form-fields').style.display='none';
+  document.getElementById('team-add-card').style.display = isAdmin ? 'block' : 'none';
 }
 function editTeam(id){
   if(!canEditTeam(id)) return;
@@ -441,8 +514,11 @@ function editTeam(id){
   document.getElementById('t-phone').value=t.phone;
   document.getElementById('t-email').value=t.email;
   document.getElementById('t-pin').value='';
+  document.getElementById('t-group').value=t.group||'';
   document.getElementById('team-form-title').textContent='Editar equipo';
   document.getElementById('t-cancel').style.display='inline-block';
+  document.getElementById('team-form-fields').style.display='block';
+  document.getElementById('team-add-card').style.display='block';
   window.scrollTo({top:0,behavior:'smooth'});
 }
 function deleteTeam(id){
@@ -452,107 +528,105 @@ function deleteTeam(id){
   unlockedTeams.delete(id); saveUnlockedTeams();
   persist(); renderTeams();
 }
-function promptTeamUnlock(id){
-  const row = document.getElementById('unlock-row-'+id);
-  row.style.display = row.style.display==='none' ? 'table-row' : 'none';
-}
-function tryUnlockTeam(id){
-  const t = state.teams.find(x=>x.id===id); if(!t) return;
-  const val = document.getElementById('unlock-pin-'+id).value;
-  if(t.pin && val===t.pin){
-    unlockedTeams.add(id); saveUnlockedTeams(); renderTeams();
-  } else {
-    document.getElementById('unlock-err-'+id).style.display='block';
-  }
+function toggleTeamAccordion(id){
+  const body = document.getElementById('team-body-'+id);
+  const chev = document.getElementById('chev-'+id);
+  if(!body) return;
+  const open = body.style.display!=='none';
+  body.style.display = open ? 'none' : 'block';
+  if(chev) chev.textContent = open ? '▾' : '▴';
 }
 function renderTeams(){
   const el = document.getElementById('teams-list');
   if(!state.teams.length){ el.innerHTML='<p class="empty">No hay equipos todavía. Agregá el primero arriba.</p>'; return; }
-  el.innerHTML = `<div class="table-wrap"><table><thead><tr><th>Equipo</th><th>Contacto</th><th></th></tr></thead><tbody>
-  ${state.teams.map(t=>{
+  el.innerHTML = state.teams.map(t=>{
     const actions = canEditTeam(t.id)
       ? `<button class="link" onclick="editTeam('${t.id}')">Editar</button>${canDeleteTeam(t.id)?`<button class="link danger" onclick="deleteTeam('${t.id}')">Borrar</button>`:''}`
-      : `<button class="link" onclick="promptTeamUnlock('${t.id}')">Acceso presidente</button>`;
-    return `<tr>
-      <td class="team-a">${esc(t.name)}</td>
-      <td>${esc(t.phone||t.email)||'—'}</td>
-      <td class="actions">${actions}</td>
-    </tr>
-    <tr id="unlock-row-${t.id}" style="display:none"><td colspan="3">
-      <div class="row"><input type="password" id="unlock-pin-${t.id}" placeholder="Contraseña del equipo"><button class="btn small" onclick="tryUnlockTeam('${t.id}')">Entrar</button></div>
-      <p class="empty" id="unlock-err-${t.id}" style="display:none">Contraseña incorrecta.</p>
-    </td></tr>`;
-  }).join('')}
-  </tbody></table></div>`;
+      : '';
+    return `<div class="card" style="padding:0;overflow:hidden;margin-bottom:10px">
+      <div style="padding:14px 16px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px" onclick="toggleTeamAccordion('${t.id}')">
+        <div><span class="team-a">${esc(t.name)}</span> ${t.group?`<span class="badge ok">Grupo ${t.group}</span>`:''}</div>
+        <span id="chev-${t.id}" style="color:var(--muted)">▾</span>
+      </div>
+      <div id="team-body-${t.id}" style="display:none;padding:0 16px 16px;border-top:1px solid var(--border)">
+        <p class="empty" style="margin-top:10px">Contacto: ${esc(t.phone||t.email)||'—'}</p>
+        ${actions?`<div class="actions">${actions}</div>`:''}
+        ${rosterHtml(t.id)}
+      </div>
+    </div>`;
+  }).join('');
 }
 
-// ---- players ----
+// ---- players (per-team, dentro del acordeón de Equipos) ----
 let editingPlayerId = null, dupConfirmed = false;
-function fillPlayerTeamSelect(){
-  const editable = state.teams.filter(t=>canEditTeam(t.id));
-  fillSelect('p-team', editable.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('') || '<option value="">—</option>');
-  const noTeams = editable.length===0;
-  document.getElementById('p-locked-note').style.display = noTeams ? 'block':'none';
-  document.getElementById('p-save-btn').disabled = noTeams;
-  document.getElementById('p-save-btn').style.opacity = noTeams ? '.5':'1';
+function rosterHtml(teamId){
+  const players = state.players.filter(p=>p.team===teamId);
+  const list = players.length ? `<div class="table-wrap"><table><thead><tr><th>Jugador</th><th>Nacimiento</th><th>Documento</th><th></th></tr></thead><tbody>
+    ${players.map(p=>`<tr><td class="team-a">${esc(p.name)}</td><td>${p.birthdate||'—'}</td><td>${esc(p.document)||'—'}</td>
+      <td class="actions">${canEditTeam(p.team)?`<button class="link" onclick="editPlayerInline('${p.id}')">Editar</button>`:''}${canDeleteTeam(p.team)?`<button class="link danger" onclick="deletePlayer('${p.id}')">Borrar</button>`:''}</td></tr>`).join('')}
+    </tbody></table></div>` : '<p class="empty">Sin jugadores cargados.</p>';
+  const form = canEditTeam(teamId) ? `
+    <div style="margin-top:10px">
+      <p class="empty" id="rp-title-${teamId}" style="font-weight:700;color:var(--text)">Agregar jugador</p>
+      <div class="grid">
+        <div class="full"><label>Nombre</label><input id="rp-name-${teamId}"></div>
+        <div><label>Fecha de nacimiento</label><input type="date" id="rp-birthdate-${teamId}"></div>
+        <div><label>Documento</label><input id="rp-document-${teamId}"></div>
+      </div>
+      <p class="empty" id="rp-dup-${teamId}" style="display:none"></p>
+      <div class="row">
+        <button class="btn small" onclick="savePlayerFor('${teamId}')">Guardar</button>
+        <button class="btn ghost small" id="rp-cancel-${teamId}" style="display:none" onclick="cancelPlayerEditFor('${teamId}')">Cancelar</button>
+      </div>
+    </div>` : '';
+  return `<p class="empty" style="font-weight:700;color:var(--text);margin-top:12px">Plantel</p>${list}${form}`;
 }
-function savePlayer(){
-  const name = document.getElementById('p-name').value.trim();
+function savePlayerFor(teamId){
+  if(!canEditTeam(teamId)) return;
+  const nameEl = document.getElementById('rp-name-'+teamId);
+  const name = nameEl.value.trim();
   if(!name) return;
-  const team = document.getElementById('p-team').value;
-  if(!canEditTeam(team)) return;
   const dup = state.players.find(p=>p.id!==editingPlayerId && norm(p.name)===norm(name));
-  const warn = document.getElementById('p-dup-warning');
+  const warn = document.getElementById('rp-dup-'+teamId);
   if(dup && !dupConfirmed){
-    warn.textContent = `⚠ Ya existe un jugador llamado "${dup.name}" (${teamName(dup.team)}). Tocá "Guardar jugador" de nuevo para confirmar igual.`;
+    warn.textContent = `⚠ Ya existe un jugador llamado "${dup.name}" (${teamName(dup.team)}). Tocá "Guardar" de nuevo para confirmar igual.`;
     warn.style.display='block';
     dupConfirmed = true;
     return;
   }
   warn.style.display='none';
-  const data = {name, team, birthdate:document.getElementById('p-birthdate').value, document:document.getElementById('p-document').value.trim()};
+  const data = {name, team:teamId, birthdate:document.getElementById('rp-birthdate-'+teamId).value, document:document.getElementById('rp-document-'+teamId).value.trim()};
   if(editingPlayerId){ Object.assign(state.players.find(x=>x.id===editingPlayerId), data); }
   else{ state.players.push({id:'p'+Date.now(), ...data}); }
-  persist(); cancelPlayerEdit(); renderPlayers();
-}
-function cancelPlayerEdit(){
+  persist();
   editingPlayerId = null; dupConfirmed = false;
-  document.getElementById('p-name').value=''; document.getElementById('p-birthdate').value=''; document.getElementById('p-document').value='';
-  document.getElementById('p-dup-warning').style.display='none';
-  document.getElementById('player-form-title').textContent='Agregar jugador';
-  document.getElementById('p-cancel').style.display='none';
+  renderTeams();
+  const body = document.getElementById('team-body-'+teamId); if(body) body.style.display='block';
+  const chev = document.getElementById('chev-'+teamId); if(chev) chev.textContent='▴';
 }
-function editPlayer(id){
+function cancelPlayerEditFor(teamId){
+  editingPlayerId = null; dupConfirmed = false;
+  ['rp-name','rp-birthdate','rp-document'].forEach(pfx=>{ const e=document.getElementById(pfx+'-'+teamId); if(e) e.value=''; });
+  const warn = document.getElementById('rp-dup-'+teamId); if(warn) warn.style.display='none';
+  const title = document.getElementById('rp-title-'+teamId); if(title) title.textContent='Agregar jugador';
+  const cancelBtn = document.getElementById('rp-cancel-'+teamId); if(cancelBtn) cancelBtn.style.display='none';
+}
+function editPlayerInline(id){
   const p = state.players.find(x=>x.id===id); if(!p) return;
   if(!canEditTeam(p.team)) return;
   editingPlayerId = id; dupConfirmed = false;
-  fillPlayerTeamSelect();
-  document.getElementById('p-name').value=p.name;
-  document.getElementById('p-team').value=p.team;
-  document.getElementById('p-birthdate').value=p.birthdate||'';
-  document.getElementById('p-document').value=p.document||'';
-  document.getElementById('player-form-title').textContent='Editar jugador';
-  document.getElementById('p-cancel').style.display='inline-block';
-  window.scrollTo({top:0,behavior:'smooth'});
+  document.getElementById('rp-name-'+p.team).value = p.name;
+  document.getElementById('rp-birthdate-'+p.team).value = p.birthdate||'';
+  document.getElementById('rp-document-'+p.team).value = p.document||'';
+  document.getElementById('rp-title-'+p.team).textContent = 'Editar jugador';
+  document.getElementById('rp-cancel-'+p.team).style.display = 'inline-block';
 }
 function deletePlayer(id){
   const p = state.players.find(x=>x.id===id); if(!p) return;
   if(!canDeleteTeam(p.team)) return;
   state.players = state.players.filter(x=>x.id!==id);
   state.goals = state.goals.filter(g=>g.player!==id);
-  persist(); renderPlayers();
-}
-function renderPlayers(){
-  fillPlayerTeamSelect();
-  const el = document.getElementById('players-list');
-  if(!state.players.length){ el.innerHTML='<p class="empty">No hay jugadores todavía.</p>'; return; }
-  el.innerHTML = `<div class="table-wrap"><table><thead><tr><th>Jugador</th><th>Equipo</th><th>Nacimiento</th><th>Documento</th><th></th></tr></thead><tbody>
-  ${state.players.map(p=>`<tr>
-      <td class="team-a">${esc(p.name)}</td><td>${esc(teamName(p.team))}</td>
-      <td>${p.birthdate||'—'}</td><td>${esc(p.document)||'—'}</td>
-      <td class="actions">${canEditTeam(p.team)?`<button class="link" onclick="editPlayer('${p.id}')">Editar</button>`:''}${canDeleteTeam(p.team)?`<button class="link danger" onclick="deletePlayer('${p.id}')">Borrar</button>`:''}</td>
-    </tr>`).join('')}
-  </tbody></table></div>`;
+  persist(); renderTeams();
 }
 
 // ---- matches ----
@@ -569,16 +643,26 @@ function saveMatch(){
   if(!home || !away || home===away) return;
   const hs = document.getElementById('m-hscore').value;
   const as = document.getElementById('m-ascore').value;
-  const data = {date:document.getElementById('m-date').value, home, away, hscore:hs===''?null:parseInt(hs), ascore:as===''?null:parseInt(as)};
+  const data = {date:document.getElementById('m-date').value, home, away, hscore:hs===''?null:parseInt(hs), ascore:as===''?null:parseInt(as), phase:document.getElementById('m-phase').value, protest:document.getElementById('m-protest').checked};
   if(editingMatchId){ Object.assign(state.matches.find(x=>x.id===editingMatchId), data); }
   else{ state.matches.push({id:'m'+Date.now(), ...data}); }
-  persist(); cancelMatchEdit(); renderMatches();
+  persist(); cancelMatchEdit(); renderMatches(); renderBracket(); renderResultados();
+}
+function toggleMatchForm(){
+  const el = document.getElementById('match-form-fields');
+  if(el) el.style.display = el.style.display==='none' ? 'block' : 'none';
+}
+function toggleFixtureForm(){
+  const el = document.getElementById('fixture-form-fields');
+  if(el) el.style.display = el.style.display==='none' ? 'block' : 'none';
 }
 function cancelMatchEdit(){
   editingMatchId = null;
   document.getElementById('m-date').value=''; document.getElementById('m-hscore').value=''; document.getElementById('m-ascore').value='';
+  document.getElementById('m-phase').value='grupos'; document.getElementById('m-protest').checked=false;
   document.getElementById('match-form-title').textContent='Agregar partido';
   document.getElementById('m-cancel').style.display='none';
+  document.getElementById('match-form-fields').style.display='none';
 }
 function editMatch(id){
   if(!isAdmin) return;
@@ -590,14 +674,17 @@ function editMatch(id){
   document.getElementById('m-away').value=m.away;
   document.getElementById('m-hscore').value=m.hscore ?? '';
   document.getElementById('m-ascore').value=m.ascore ?? '';
+  document.getElementById('m-phase').value=m.phase||'grupos';
+  document.getElementById('m-protest').checked=!!m.protest;
   document.getElementById('match-form-title').textContent='Editar partido';
   document.getElementById('m-cancel').style.display='inline-block';
+  document.getElementById('match-form-fields').style.display='block';
   window.scrollTo({top:0,behavior:'smooth'});
 }
 function deleteMatch(id){
   if(!isAdmin) return;
   state.matches = state.matches.filter(x=>x.id!==id);
-  persist(); renderMatches();
+  persist(); renderMatches(); renderBracket(); renderResultados();
 }
 function generateFixture(){
   if(!isAdmin) return;
@@ -627,7 +714,7 @@ function generateFixture(){
     const d = new Date(base.getTime() + idx*interval*86400000);
     const dateStr = d.toISOString().slice(0,10);
     roundMatches.forEach(([home,away])=>{
-      state.matches.push({id:'m'+Date.now()+Math.random().toString(36).slice(2,7), date:dateStr, home, away, hscore:null, ascore:null});
+      state.matches.push({id:'m'+Date.now()+Math.random().toString(36).slice(2,7), date:dateStr, home, away, hscore:null, ascore:null, phase:'grupos', protest:false});
     });
   });
   persist();
@@ -637,18 +724,86 @@ function generateFixture(){
 function renderMatches(){
   fillTeamSelects();
   const el = document.getElementById('matches-list');
-  const list = [...state.matches].sort((a,b)=> (a.date||'').localeCompare(b.date||''));
+  const list = state.matches.filter(m=>(m.phase||'grupos')==='grupos').sort((a,b)=> (a.date||'').localeCompare(b.date||''));
   if(!list.length){ el.innerHTML='<p class="empty">No hay partidos cargados todavía.</p>'; return; }
   el.innerHTML = `<div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Local</th><th class="num">·</th><th>Visitante</th><th></th></tr></thead><tbody>
   ${list.map(m=>{
-    const played = m.hscore!==null && m.ascore!==null;
     return `<tr>
       <td>${m.date||'—'}</td><td>${esc(teamName(m.home))}</td>
-      <td class="num">${played? m.hscore+' - '+m.ascore : 'vs'}</td><td>${esc(teamName(m.away))}</td>
-      <td class="actions admin-only"><button class="link" onclick="editMatch('${m.id}')">Editar</button><button class="link danger" onclick="deleteMatch('${m.id}')">Borrar</button></td>
-    </tr>`;
+      <td class="num">vs${m.protest?' *':''}</td><td>${esc(teamName(m.away))}</td>
+      <td class="actions admin-only"><button class="link" onclick="editMatch('${m.id}')">Editar</button><button class="link danger" onclick="deleteMatch('${m.id}')">Borrar</button><button class="link" onclick="toggleMatchPanel('${m.id}')">⚽📋</button></td>
+    </tr>
+    <tr id="match-panel-${m.id}" class="admin-only" style="display:none"><td colspan="5"><div id="match-panel-content-${m.id}"></div></td></tr>`;
   }).join('')}
-  </tbody></table></div>`;
+  </tbody></table></div>${state.matches.some(m=>m.protest)?'<p class="empty">* Partido protestado — el resultado está en la pestaña Resultados</p>':'<p class="empty">El resultado se ve en la pestaña Resultados</p>'}`;
+}
+function toggleMatchPanel(id){
+  const row = document.getElementById('match-panel-'+id);
+  if(!row) return;
+  row.style.display = row.style.display==='none' ? 'table-row' : 'none';
+  if(row.style.display==='table-row') renderMatchPanel(id);
+}
+function renderMatchPanel(id){
+  const el = document.getElementById('match-panel-content-'+id);
+  if(!el) return;
+  const m = state.matches.find(x=>x.id===id); if(!m) return;
+  const opts = state.players.filter(p=>p.team===m.home || p.team===m.away)
+    .map(p=>`<option value="${p.id}">${esc(p.name)} (${esc(teamName(p.team))})</option>`).join('') || '<option value="">Sin jugadores en estos equipos</option>';
+  const goals = state.goals.filter(g=>g.match===id);
+  const cards = state.cards.filter(c=>c.match===id);
+  el.innerHTML = `
+    <div class="row"><select id="qg-player-${id}">${opts}</select><input type="number" min="1" value="1" id="qg-goals-${id}" style="max-width:64px"><button class="btn small" onclick="addQuickGoal('${id}')">+ Gol</button></div>
+    <div class="row" style="margin-top:6px"><select id="qc-player-${id}">${opts}</select><select id="qc-type-${id}" style="max-width:110px"><option value="Amarilla">Amarilla</option><option value="Roja">Roja</option></select><button class="btn small" onclick="addQuickCard('${id}')">+ Tarjeta</button></div>
+    ${goals.length?`<p class="empty" style="margin-top:8px">${goals.map(g=>`⚽ ${esc(playerName(g.player))} (${g.goals}) <button class="link danger" onclick="deleteGoal('${g.id}');renderMatchPanel('${id}')">x</button>`).join(' &nbsp; ')}</p>`:''}
+    ${cards.length?`<p class="empty">${cards.map(c=>`${c.type==='Roja'?'🟥':'🟨'} ${esc(playerName(c.player))} <button class="link danger" onclick="deleteCard('${c.id}');renderMatchPanel('${id}')">x</button>`).join(' &nbsp; ')}</p>`:''}
+  `;
+}
+function addQuickGoal(matchId){
+  if(!isAdmin) return;
+  const player = document.getElementById('qg-player-'+matchId).value;
+  const goals = parseInt(document.getElementById('qg-goals-'+matchId).value)||0;
+  if(!player || goals<=0) return;
+  state.goals.push({id:'g'+Date.now(), player, goals, match:matchId});
+  persist(); renderMatchPanel(matchId); renderGoals();
+}
+function addQuickCard(matchId){
+  if(!isAdmin) return;
+  const player = document.getElementById('qc-player-'+matchId).value;
+  if(!player) return;
+  state.cards.push({id:'c'+Date.now(), player, type:document.getElementById('qc-type-'+matchId).value, match:matchId});
+  persist(); renderMatchPanel(matchId); renderCards();
+}
+function renderResultados(){
+  const el = document.getElementById('resultados-list');
+  if(!el) return;
+  const list = state.matches.filter(m=>m.hscore!==null && m.ascore!==null).sort((a,b)=> (b.date||'').localeCompare(a.date||''));
+  if(!list.length){ el.innerHTML='<p class="empty">Todavía no hay resultados cargados.</p>'; return; }
+  el.innerHTML = `<div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Fase</th><th>Local</th><th class="num">·</th><th>Visitante</th></tr></thead><tbody>
+  ${list.map(m=>`<tr>
+      <td>${m.date||'—'}</td><td>${PHASES[m.phase||'grupos']}</td><td>${esc(teamName(m.home))}</td>
+      <td class="num">${m.hscore} - ${m.ascore}${m.protest?' *':''}</td><td>${esc(teamName(m.away))}</td>
+    </tr>`).join('')}
+  </tbody></table></div>${list.some(m=>m.protest)?'<p class="empty">* Partido protestado</p>':''}`;
+}
+function renderBracket(){
+  const el = document.getElementById('bracket-view');
+  if(!el) return;
+  const byPhase = PHASE_ORDER.map(ph=>({ph, matches: state.matches.filter(m=>m.phase===ph)}));
+  if(byPhase.every(g=>!g.matches.length)){ el.innerHTML = '<p class="empty">Todavía no hay partidos de eliminatorias cargados.</p>'; return; }
+  el.innerHTML = `<div class="table-wrap"><div style="display:flex;gap:16px;min-width:600px">
+    ${byPhase.map(g=>`<div style="flex:1;min-width:150px">
+      <p class="empty" style="font-weight:700;color:var(--text)">${PHASES[g.ph]}</p>
+      ${g.matches.length? g.matches.map(m=>{
+        const played = m.hscore!==null && m.ascore!==null;
+        return `<div class="card" style="padding:10px;margin-bottom:8px">
+          <div>${esc(teamName(m.home))}</div>
+          <div style="color:var(--muted);font-size:.8rem">${played? m.hscore+' - '+m.ascore : 'vs'}${m.protest?' *':''}</div>
+          <div>${esc(teamName(m.away))}</div>
+          <div class="actions admin-only" style="margin-top:6px"><button class="link" onclick="editMatch('${m.id}')">Editar</button><button class="link danger" onclick="deleteMatch('${m.id}')">Borrar</button></div>
+        </div>`;
+      }).join('') : '<p class="empty">Sin partidos</p>'}
+    </div>`).join('')}
+  </div></div>${state.matches.some(m=>m.protest && PHASE_ORDER.includes(m.phase))?'<p class="empty">* Partido protestado</p>':''}`;
 }
 
 // ---- goleadores ----
@@ -822,7 +977,7 @@ function doTransfer(){
   p.team = newTeam;
   state.transfers.push({id:'tf'+Date.now(), window:win, player, from, to:newTeam});
   msg.style.display='none';
-  persist(); renderPlayers(); renderTransfers(); fillTransferSelects();
+  persist(); renderTeams(); renderTransfers(); fillTransferSelects();
 }
 function renderTransfers(){
   const el = document.getElementById('transfers-list');
@@ -833,25 +988,41 @@ function renderTransfers(){
 }
 
 // ---- standings ----
-function computeStandings(){
+function computeStandings(group){
+  const teams = group ? state.teams.filter(t=>t.group===group) : state.teams;
   const stats = {};
-  state.teams.forEach(t=> stats[t.id] = {name:t.name, pj:0,g:0,e:0,p:0,gf:0,gc:0});
+  teams.forEach(t=> stats[t.id] = {name:t.name, pj:0,g:0,e:0,p:0,gf:0,gc:0,protest:false});
   state.matches.forEach(m=>{
+    if((m.phase||'grupos')!=='grupos') return;
     if(m.hscore===null || m.ascore===null) return;
     const h = stats[m.home], a = stats[m.away];
     if(!h || !a) return;
     h.pj++; a.pj++; h.gf+=m.hscore; h.gc+=m.ascore; a.gf+=m.ascore; a.gc+=m.hscore;
     if(m.hscore>m.ascore){ h.g++; a.p++; } else if(m.hscore<m.ascore){ a.g++; h.p++; } else{ h.e++; a.e++; }
+    if(m.protest){ h.protest=true; a.protest=true; }
   });
   return Object.values(stats).map(s=>({...s, dg:s.gf-s.gc, pts:s.g*3+s.e})).sort((a,b)=> b.pts-a.pts || b.dg-a.dg || b.gf-a.gf || a.name.localeCompare(b.name));
+}
+function standingsTable(rows){
+  return `<div class="table-wrap"><table><thead><tr><th>Equipo</th><th class="num">PJ</th><th class="num">G</th><th class="num">E</th><th class="num">P</th><th class="num">GF</th><th class="num">GC</th><th class="num">DG</th><th class="num">Pts</th></tr></thead><tbody>
+  ${rows.map(r=>`<tr><td class="team-a">${esc(r.name)}${r.protest?' *':''}</td><td class="num">${r.pj}</td><td class="num">${r.g}</td><td class="num">${r.e}</td><td class="num">${r.p}</td><td class="num">${r.gf}</td><td class="num">${r.gc}</td><td class="num">${r.dg}</td><td class="num" style="font-weight:700;color:var(--primary)">${r.pts}</td></tr>`).join('')}
+  </tbody></table></div>`;
 }
 function renderStandings(){
   const el = document.getElementById('standings');
   if(!state.teams.length){ el.innerHTML='<p class="empty">Agregá equipos para ver la tabla.</p>'; return; }
-  const rows = computeStandings();
-  el.innerHTML = `<div class="table-wrap"><table><thead><tr><th>Equipo</th><th class="num">PJ</th><th class="num">G</th><th class="num">E</th><th class="num">P</th><th class="num">GF</th><th class="num">GC</th><th class="num">DG</th><th class="num">Pts</th></tr></thead><tbody>
-  ${rows.map(r=>`<tr><td class="team-a">${esc(r.name)}</td><td class="num">${r.pj}</td><td class="num">${r.g}</td><td class="num">${r.e}</td><td class="num">${r.p}</td><td class="num">${r.gf}</td><td class="num">${r.gc}</td><td class="num">${r.dg}</td><td class="num" style="font-weight:700;color:var(--primary)">${r.pts}</td></tr>`).join('')}
-  </tbody></table></div>`;
+  const hasGroups = state.teams.some(t=>t.group==='A' || t.group==='B');
+  const anyProtest = computeStandings().some(r=>r.protest);
+  if(!hasGroups){
+    el.innerHTML = standingsTable(computeStandings()) + (anyProtest?'<p class="empty">* Tiene un partido protestado</p>':'');
+    return;
+  }
+  const rowsA = computeStandings('A'), rowsB = computeStandings('B');
+  const sinGrupo = state.teams.filter(t=>!t.group);
+  el.innerHTML = `<p class="empty" style="font-weight:700;color:var(--text)">Grupo A</p>${standingsTable(rowsA)}
+    <p class="empty" style="font-weight:700;color:var(--text);margin-top:14px">Grupo B</p>${standingsTable(rowsB)}
+    ${sinGrupo.length?`<p class="empty" style="margin-top:10px">Sin grupo asignado todavía: ${sinGrupo.map(t=>esc(t.name)).join(', ')}</p>`:''}
+    ${anyProtest?'<p class="empty">* Tiene un partido protestado</p>':''}`;
 }
 
 // ---- export ----
@@ -861,7 +1032,7 @@ function buildWorkbook(){
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(equipos), 'Equipos');
   const jugadores = state.players.map(p=>({Jugador:p.name, Equipo:teamName(p.team), FechaNacimiento:p.birthdate, Documento:p.document}));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(jugadores), 'Jugadores');
-  const partidos = state.matches.map(m=>({Fecha:m.date, Local:teamName(m.home), Visitante:teamName(m.away), GolesLocal:m.hscore, GolesVisitante:m.ascore}));
+  const partidos = state.matches.map(m=>({Fecha:m.date, Fase:PHASES[m.phase||'grupos'], Local:teamName(m.home), Visitante:teamName(m.away), GolesLocal:m.hscore, GolesVisitante:m.ascore, Protestado:m.protest?'Sí':'No'}));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(partidos), 'Partidos');
   const totals = {};
   state.goals.forEach(g=>{ totals[g.player]=(totals[g.player]||0)+g.goals; });
@@ -871,8 +1042,14 @@ function buildWorkbook(){
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(tarjetas), 'Tarjetas');
   const multas = state.fines.map(f=>({Jugador:playerName(f.player), Monto:f.amount, Motivo:f.reason, Estado:f.status}));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(multas), 'Multas');
-  const tabla = computeStandings().map(r=>({Equipo:r.name, PJ:r.pj, G:r.g, E:r.e, P:r.p, GF:r.gf, GC:r.gc, DG:r.dg, Pts:r.pts}));
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(tabla), 'Tabla');
+  const toRow = r=>({Equipo:r.name, PJ:r.pj, G:r.g, E:r.e, P:r.p, GF:r.gf, GC:r.gc, DG:r.dg, Pts:r.pts, Protestado:r.protest?'Sí':'No'});
+  const hasGroups = state.teams.some(t=>t.group==='A'||t.group==='B');
+  if(hasGroups){
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(computeStandings('A').map(toRow)), 'Tabla Grupo A');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(computeStandings('B').map(toRow)), 'Tabla Grupo B');
+  } else {
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(computeStandings().map(toRow)), 'Tabla');
+  }
   return wb;
 }
 async function exportExcel(){
@@ -897,8 +1074,9 @@ async function exportExcel(){
 
 applyAdmin();
 renderTeams();
-renderPlayers();
 renderMatches();
+renderResultados();
+renderBracket();
 renderGoals();
 renderCards();
 renderFines();
