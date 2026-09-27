@@ -177,7 +177,19 @@ body.admin-mode .lock-note{display:none;}
       <div id="match-form-fields" style="display:none;margin-top:12px">
         <h2 id="match-form-title">Agregar partido</h2>
         <div class="grid">
-          <div class="full"><label>Fase</label><select id="m-phase"><option value="grupos">Grupos</option><option value="octavos">Octavos de Final</option><option value="cuartos">Cuartos de Final</option><option value="semifinal">Semifinal</option><option value="final">Final</option></select></div>
+          <div class="full"><label>Fase</label><select id="m-phase">
+            <option value="grupos">Grupos</option>
+            <option value="octavos">Octavos de Final (16 equipos)</option>
+            <option value="oro_cuartos">Copa de Oro — Cuartos de Final</option>
+            <option value="oro_semi">Copa de Oro — Semifinal</option>
+            <option value="oro_final">Copa de Oro — Final</option>
+            <option value="oro_tercer">Copa de Oro — 3er puesto</option>
+            <option value="oro_clasificacion">Copa de Oro — Clasificación 5º a 8º</option>
+            <option value="plata_cuartos">Copa de Plata — Cuartos de Final</option>
+            <option value="plata_semi">Copa de Plata — Semifinal</option>
+            <option value="plata_final">Copa de Plata — Final</option>
+            <option value="plata_tercer">Copa de Plata — 3er/4º puesto</option>
+          </select></div>
           <div class="full"><label>Fecha</label><input type="date" id="m-date"></div>
           <div><label>Local</label><select id="m-home"></select></div>
           <div><label>Visitante</label><select id="m-away"></select></div>
@@ -271,15 +283,14 @@ body.admin-mode .lock-note{display:none;}
   <!-- REGLAMENTO -->
   <div class="panel" id="panel-reglamento">
     <div class="card admin-only">
-      <h2>Subir reglamento (PDF)</h2>
+      <h2>Subir reglamento (PDF, máx. 50 MB)</h2>
       <input type="file" id="r-file" accept="application/pdf">
       <div class="row" style="margin-top:10px">
         <button class="btn" onclick="uploadReglamento()">Subir</button>
-        <button class="btn ghost" onclick="deleteReglamento()">Quitar reglamento</button>
       </div>
       <p class="empty" id="r-msg" style="display:none"></p>
     </div>
-    <div class="card"><h2>Reglamento de la liga</h2><div id="reglamento-view"><p class="empty">Todavía no se cargó el reglamento.</p></div></div>
+    <div class="card"><h2>Reglamentos de la liga</h2><div id="reglamento-view"><p class="empty">Todavía no se cargó ningún reglamento.</p></div></div>
   </div>
 
   <!-- TABLA -->
@@ -305,11 +316,22 @@ function normalizeState(s){
   s.cards = s.cards || []; s.fines = s.fines || [];
   s.settings = s.settings || {};
   s.teams.forEach(t=>{ if(t.group===undefined) t.group=''; });
-  s.matches.forEach(m=>{ if(!m.phase) m.phase='grupos'; if(m.protest===undefined) m.protest=false; });
+  const OLD_PHASE_MAP = {cuartos:'oro_cuartos', semifinal:'oro_semi', final:'oro_final'};
+  s.matches.forEach(m=>{
+    if(!m.phase) m.phase='grupos';
+    else if(OLD_PHASE_MAP[m.phase]) m.phase = OLD_PHASE_MAP[m.phase];
+    if(m.protest===undefined) m.protest=false;
+  });
   return s;
 }
-const PHASES = {grupos:'Grupos', octavos:'Octavos de Final', cuartos:'Cuartos de Final', semifinal:'Semifinal', final:'Final'};
-const PHASE_ORDER = ['octavos','cuartos','semifinal','final'];
+const PHASES = {
+  grupos:'Grupos', octavos:'Octavos de Final',
+  oro_cuartos:'Copa de Oro — Cuartos', oro_semi:'Copa de Oro — Semifinal', oro_final:'Copa de Oro — Final', oro_tercer:'Copa de Oro — 3er puesto', oro_clasificacion:'Copa de Oro — Clasificación 5º-8º',
+  plata_cuartos:'Copa de Plata — Cuartos', plata_semi:'Copa de Plata — Semifinal', plata_final:'Copa de Plata — Final', plata_tercer:'Copa de Plata — 3er/4º puesto'
+};
+const ORO_ORDER = ['oro_cuartos','oro_semi','oro_final','oro_tercer','oro_clasificacion'];
+const PLATA_ORDER = ['plata_cuartos','plata_semi','plata_final','plata_tercer'];
+const PHASE_ORDER = ['octavos', ...ORO_ORDER, ...PLATA_ORDER];
 state = normalizeState(state);
 let reglamentoData = null;
 
@@ -363,7 +385,7 @@ if(fbRef){
   });
 }
 if(fbDb2){
-  fbDb2.ref('reglamento').on('value', snap=>{
+  fbDb2.ref('reglamentos').on('value', snap=>{
     reglamentoData = snap.val() || null;
     renderReglamento();
   });
@@ -785,25 +807,36 @@ function renderResultados(){
     </tr>`).join('')}
   </tbody></table></div>${list.some(m=>m.protest)?'<p class="empty">* Partido protestado</p>':''}`;
 }
+function bracketColumn(ph){
+  const matches = state.matches.filter(m=>m.phase===ph);
+  return `<div style="flex:1;min-width:150px">
+    <p class="empty" style="font-weight:700;color:var(--text)">${PHASES[ph]}</p>
+    ${matches.length? matches.map(m=>{
+      const played = m.hscore!==null && m.ascore!==null;
+      return `<div class="card" style="padding:10px;margin-bottom:8px">
+        <div>${esc(teamName(m.home))}</div>
+        <div style="color:var(--muted);font-size:.8rem">${played? m.hscore+' - '+m.ascore : 'vs'}${m.protest?' *':''}</div>
+        <div>${esc(teamName(m.away))}</div>
+        <div class="actions admin-only" style="margin-top:6px"><button class="link" onclick="editMatch('${m.id}')">Editar</button><button class="link danger" onclick="deleteMatch('${m.id}')">Borrar</button></div>
+      </div>`;
+    }).join('') : '<p class="empty">Sin partidos</p>'}
+  </div>`;
+}
 function renderBracket(){
   const el = document.getElementById('bracket-view');
   if(!el) return;
-  const byPhase = PHASE_ORDER.map(ph=>({ph, matches: state.matches.filter(m=>m.phase===ph)}));
-  if(byPhase.every(g=>!g.matches.length)){ el.innerHTML = '<p class="empty">Todavía no hay partidos de eliminatorias cargados.</p>'; return; }
-  el.innerHTML = `<div class="table-wrap"><div style="display:flex;gap:16px;min-width:600px">
-    ${byPhase.map(g=>`<div style="flex:1;min-width:150px">
-      <p class="empty" style="font-weight:700;color:var(--text)">${PHASES[g.ph]}</p>
-      ${g.matches.length? g.matches.map(m=>{
-        const played = m.hscore!==null && m.ascore!==null;
-        return `<div class="card" style="padding:10px;margin-bottom:8px">
-          <div>${esc(teamName(m.home))}</div>
-          <div style="color:var(--muted);font-size:.8rem">${played? m.hscore+' - '+m.ascore : 'vs'}${m.protest?' *':''}</div>
-          <div>${esc(teamName(m.away))}</div>
-          <div class="actions admin-only" style="margin-top:6px"><button class="link" onclick="editMatch('${m.id}')">Editar</button><button class="link danger" onclick="deleteMatch('${m.id}')">Borrar</button></div>
-        </div>`;
-      }).join('') : '<p class="empty">Sin partidos</p>'}
-    </div>`).join('')}
-  </div></div>${state.matches.some(m=>m.protest && PHASE_ORDER.includes(m.phase))?'<p class="empty">* Partido protestado</p>':''}`;
+  if(!state.matches.some(m=>PHASE_ORDER.includes(m.phase))){ el.innerHTML = '<p class="empty">Todavía no hay partidos de eliminatorias cargados.</p>'; return; }
+  el.innerHTML = `
+    <p class="empty" style="font-weight:700;color:var(--text)">Octavos de Final <span style="font-weight:400;color:var(--muted)">(16 equipos — ganadores a Copa de Oro, perdedores a Copa de Plata)</span></p>
+    <div class="table-wrap"><div style="display:flex;gap:16px;min-width:200px;margin-bottom:16px">${bracketColumn('octavos')}</div></div>
+
+    <p class="empty" style="font-weight:700;color:var(--primary)">🥇 Copa de Oro</p>
+    <div class="table-wrap"><div style="display:flex;gap:16px;min-width:750px;margin-bottom:16px">${ORO_ORDER.map(bracketColumn).join('')}</div></div>
+
+    <p class="empty" style="font-weight:700;color:var(--muted)">🥈 Copa de Plata</p>
+    <div class="table-wrap"><div style="display:flex;gap:16px;min-width:600px">${PLATA_ORDER.map(bracketColumn).join('')}</div></div>
+
+    ${state.matches.some(m=>m.protest && PHASE_ORDER.includes(m.phase))?'<p class="empty" style="margin-top:10px">* Partido protestado</p>':''}`;
 }
 
 // ---- goleadores ----
@@ -903,33 +936,44 @@ function renderFines(){
 }
 
 // ---- reglamento ----
+const REGLAMENTO_MAX = 50*1024*1024;
 function uploadReglamento(){
   if(!isAdmin || !fbDb2) return;
   const file = document.getElementById('r-file').files[0];
   const msg = document.getElementById('r-msg');
-  if(!file){ msg.textContent='Elegí un archivo PDF primero.'; msg.style.display='block'; return; }
-  if(file.type!=='application/pdf'){ msg.textContent='Tiene que ser un archivo PDF.'; msg.style.display='block'; return; }
+  msg.style.display='block';
+  if(!file){ msg.textContent='Elegí un archivo PDF primero.'; return; }
+  if(file.type!=='application/pdf'){ msg.textContent='Tiene que ser un archivo PDF.'; return; }
+  if(file.size>REGLAMENTO_MAX){ msg.textContent='El archivo supera los 50 MB. Probá con uno más liviano.'; return; }
   const reader = new FileReader();
   reader.onload = ()=>{
-    fbDb2.ref('reglamento').set({filename:file.name, dataUrl:reader.result, uploadedAt:Date.now()})
+    fbDb2.ref('reglamentos').push({filename:file.name, dataUrl:reader.result, uploadedAt:Date.now()})
       .then(()=>{ msg.style.display='none'; document.getElementById('r-file').value=''; })
-      .catch(()=>{ msg.textContent='No se pudo subir (puede ser muy pesado). Probá con un PDF más liviano.'; msg.style.display='block'; });
+      .catch(()=>{ msg.textContent='No se pudo subir. Probá con un PDF más liviano.'; msg.style.display='block'; });
   };
   reader.readAsDataURL(file);
 }
-function deleteReglamento(){
+function deleteReglamento(id){
   if(!isAdmin || !fbDb2) return;
-  fbDb2.ref('reglamento').remove().catch(()=>{});
+  fbDb2.ref('reglamentos/'+id).remove().catch(()=>{});
 }
 function renderReglamento(){
   const el = document.getElementById('reglamento-view');
-  if(!reglamentoData){ el.innerHTML = '<p class="empty">Todavía no se cargó el reglamento.</p>'; return; }
-  el.innerHTML = `<p class="empty">${esc(reglamentoData.filename)}</p><button class="btn" onclick="downloadReglamento()">Descargar PDF</button>`;
+  const docs = reglamentoData ? Object.entries(reglamentoData).sort((a,b)=> (b[1].uploadedAt||0)-(a[1].uploadedAt||0)) : [];
+  if(!docs.length){ el.innerHTML = '<p class="empty">Todavía no se cargó ningún reglamento.</p>'; return; }
+  el.innerHTML = docs.map(([id,doc])=>`
+    <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px">
+      <span class="team-a">${esc(doc.filename)}</span>
+      <div class="actions">
+        <button class="link" onclick="downloadReglamento('${id}')">Descargar</button>
+        <button class="link danger admin-only" onclick="deleteReglamento('${id}')">Borrar</button>
+      </div>
+    </div>`).join('');
 }
-function downloadReglamento(){
-  if(!reglamentoData) return;
+function downloadReglamento(id){
+  const doc = reglamentoData && reglamentoData[id]; if(!doc) return;
   const a = document.createElement('a');
-  a.href = reglamentoData.dataUrl; a.download = reglamentoData.filename || 'reglamento.pdf';
+  a.href = doc.dataUrl; a.download = doc.filename || 'reglamento.pdf';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
 }
 
