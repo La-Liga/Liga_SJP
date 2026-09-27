@@ -184,7 +184,9 @@ body.admin-mode .lock-note{display:none;}
             <option value="oro_semi">Copa de Oro — Semifinal</option>
             <option value="oro_final">Copa de Oro — Final</option>
             <option value="oro_tercer">Copa de Oro — 3er puesto</option>
-            <option value="oro_clasificacion">Copa de Oro — Clasificación 5º a 8º</option>
+            <option value="oro_clas_cuartos">Clasificación 5º-8º</option>
+            <option value="oro_5to">5º puesto</option>
+            <option value="oro_7mo">7º puesto</option>
             <option value="plata_cuartos">Copa de Plata — Cuartos de Final</option>
             <option value="plata_semi">Copa de Plata — Semifinal</option>
             <option value="plata_final">Copa de Plata — Final</option>
@@ -195,6 +197,8 @@ body.admin-mode .lock-note{display:none;}
           <div><label>Visitante</label><select id="m-away"></select></div>
           <div><label>Goles local</label><input type="number" min="0" id="m-hscore"></div>
           <div><label>Goles visitante</label><input type="number" min="0" id="m-ascore"></div>
+          <div><label>Penales local (si hubo)</label><input type="number" min="0" id="m-hpen"></div>
+          <div><label>Penales visitante (si hubo)</label><input type="number" min="0" id="m-apen"></div>
           <div class="full"><label><input type="checkbox" id="m-protest"> Partido protestado</label></div>
         </div>
         <div class="row">
@@ -316,7 +320,7 @@ function normalizeState(s){
   s.cards = s.cards || []; s.fines = s.fines || [];
   s.settings = s.settings || {};
   s.teams.forEach(t=>{ if(t.group===undefined) t.group=''; });
-  const OLD_PHASE_MAP = {cuartos:'oro_cuartos', semifinal:'oro_semi', final:'oro_final'};
+  const OLD_PHASE_MAP = {cuartos:'oro_cuartos', semifinal:'oro_semi', final:'oro_final', oro_clasificacion:'oro_clas_cuartos'};
   s.matches.forEach(m=>{
     if(!m.phase) m.phase='grupos';
     else if(OLD_PHASE_MAP[m.phase]) m.phase = OLD_PHASE_MAP[m.phase];
@@ -326,12 +330,21 @@ function normalizeState(s){
 }
 const PHASES = {
   grupos:'Grupos', octavos:'Octavos de Final',
-  oro_cuartos:'Copa de Oro — Cuartos', oro_semi:'Copa de Oro — Semifinal', oro_final:'Copa de Oro — Final', oro_tercer:'Copa de Oro — 3er puesto', oro_clasificacion:'Copa de Oro — Clasificación 5º-8º',
+  oro_cuartos:'Copa de Oro — Cuartos', oro_semi:'Copa de Oro — Semifinal', oro_final:'Copa de Oro — Final', oro_tercer:'Copa de Oro — 3er puesto',
+  oro_clas_cuartos:'Clasificación 5º-8º', oro_5to:'5º puesto', oro_7mo:'7º puesto',
   plata_cuartos:'Copa de Plata — Cuartos', plata_semi:'Copa de Plata — Semifinal', plata_final:'Copa de Plata — Final', plata_tercer:'Copa de Plata — 3er/4º puesto'
 };
-const ORO_ORDER = ['oro_cuartos','oro_semi','oro_final','oro_tercer','oro_clasificacion'];
+const ORO_ORDER = ['oro_cuartos','oro_semi','oro_final','oro_tercer','oro_clas_cuartos','oro_5to','oro_7mo'];
 const PLATA_ORDER = ['plata_cuartos','plata_semi','plata_final','plata_tercer'];
 const PHASE_ORDER = ['octavos', ...ORO_ORDER, ...PLATA_ORDER];
+const ADVANCE_MAP = {
+  octavos:          {winner:'oro_cuartos', loser:'plata_cuartos'},
+  oro_cuartos:      {winner:'oro_semi', loser:'oro_clas_cuartos'},
+  oro_semi:         {winner:'oro_final', loser:'oro_tercer'},
+  oro_clas_cuartos: {winner:'oro_5to', loser:'oro_7mo'},
+  plata_cuartos:    {winner:'plata_semi', loser:null},
+  plata_semi:       {winner:'plata_final', loser:'plata_tercer'}
+};
 state = normalizeState(state);
 let reglamentoData = null;
 
@@ -665,7 +678,9 @@ function saveMatch(){
   if(!home || !away || home===away) return;
   const hs = document.getElementById('m-hscore').value;
   const as = document.getElementById('m-ascore').value;
-  const data = {date:document.getElementById('m-date').value, home, away, hscore:hs===''?null:parseInt(hs), ascore:as===''?null:parseInt(as), phase:document.getElementById('m-phase').value, protest:document.getElementById('m-protest').checked};
+  const hp = document.getElementById('m-hpen').value;
+  const ap = document.getElementById('m-apen').value;
+  const data = {date:document.getElementById('m-date').value, home, away, hscore:hs===''?null:parseInt(hs), ascore:as===''?null:parseInt(as), hpen:hp===''?null:parseInt(hp), apen:ap===''?null:parseInt(ap), phase:document.getElementById('m-phase').value, protest:document.getElementById('m-protest').checked};
   if(editingMatchId){ Object.assign(state.matches.find(x=>x.id===editingMatchId), data); }
   else{ state.matches.push({id:'m'+Date.now(), ...data}); }
   persist(); cancelMatchEdit(); renderMatches(); renderBracket(); renderResultados();
@@ -681,6 +696,7 @@ function toggleFixtureForm(){
 function cancelMatchEdit(){
   editingMatchId = null;
   document.getElementById('m-date').value=''; document.getElementById('m-hscore').value=''; document.getElementById('m-ascore').value='';
+  document.getElementById('m-hpen').value=''; document.getElementById('m-apen').value='';
   document.getElementById('m-phase').value='grupos'; document.getElementById('m-protest').checked=false;
   document.getElementById('match-form-title').textContent='Agregar partido';
   document.getElementById('m-cancel').style.display='none';
@@ -696,6 +712,8 @@ function editMatch(id){
   document.getElementById('m-away').value=m.away;
   document.getElementById('m-hscore').value=m.hscore ?? '';
   document.getElementById('m-ascore').value=m.ascore ?? '';
+  document.getElementById('m-hpen').value=m.hpen ?? '';
+  document.getElementById('m-apen').value=m.apen ?? '';
   document.getElementById('m-phase').value=m.phase||'grupos';
   document.getElementById('m-protest').checked=!!m.protest;
   document.getElementById('match-form-title').textContent='Editar partido';
@@ -803,40 +821,103 @@ function renderResultados(){
   el.innerHTML = `<div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Fase</th><th>Local</th><th class="num">·</th><th>Visitante</th></tr></thead><tbody>
   ${list.map(m=>`<tr>
       <td>${m.date||'—'}</td><td>${PHASES[m.phase||'grupos']}</td><td>${esc(teamName(m.home))}</td>
-      <td class="num">${m.hscore} - ${m.ascore}${m.protest?' *':''}</td><td>${esc(teamName(m.away))}</td>
+      <td class="num">${m.hscore} - ${m.ascore}${(m.hpen!=null && m.apen!=null)?` (pen. ${m.hpen}-${m.apen})`:''}${m.protest?' *':''}</td><td>${esc(teamName(m.away))}</td>
     </tr>`).join('')}
   </tbody></table></div>${list.some(m=>m.protest)?'<p class="empty">* Partido protestado</p>':''}`;
 }
-function bracketColumn(ph){
-  const matches = state.matches.filter(m=>m.phase===ph);
-  return `<div style="flex:1;min-width:150px">
-    <p class="empty" style="font-weight:700;color:var(--text)">${PHASES[ph]}</p>
-    ${matches.length? matches.map(m=>{
-      const played = m.hscore!==null && m.ascore!==null;
-      return `<div class="card" style="padding:10px;margin-bottom:8px">
-        <div>${esc(teamName(m.home))}</div>
-        <div style="color:var(--muted);font-size:.8rem">${played? m.hscore+' - '+m.ascore : 'vs'}${m.protest?' *':''}</div>
-        <div>${esc(teamName(m.away))}</div>
-        <div class="actions admin-only" style="margin-top:6px"><button class="link" onclick="editMatch('${m.id}')">Editar</button><button class="link danger" onclick="deleteMatch('${m.id}')">Borrar</button></div>
-      </div>`;
-    }).join('') : '<p class="empty">Sin partidos</p>'}
+let currentBracketPhase = 'octavos';
+const BRACKET_TABS = ['octavos','oro_cuartos','oro_semi','oro_final','oro_clas_cuartos','oro_5to','oro_7mo','plata_cuartos','plata_semi','plata_final'];
+function bracketTabLabel(ph){
+  if(ph==='octavos') return 'Octavos';
+  if(ph.startsWith('oro_')) return '🥇 '+PHASES[ph].replace('Copa de Oro — ','');
+  if(ph.startsWith('plata_')) return '🥈 '+PHASES[ph].replace('Copa de Plata — ','');
+  return PHASES[ph];
+}
+function selectBracketPhase(ph){ currentBracketPhase = ph; renderBracket(); }
+function matchCard(m){
+  const played = m.hscore!==null && m.ascore!==null;
+  return `<div class="card" style="padding:14px 16px;margin-bottom:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <span class="team-a">${esc(teamName(m.home))}</span>
+      <span style="font-weight:700;font-size:1.1rem">${played?m.hscore:'—'}</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:6px">
+      <span class="team-a">${esc(teamName(m.away))}</span>
+      <span style="font-weight:700;font-size:1.1rem">${played?m.ascore:'—'}</span>
+    </div>
+    ${(m.hpen!=null && m.apen!=null)?`<p class="empty" style="margin-top:4px">Penales: ${m.hpen} - ${m.apen}</p>`:''}
+    ${m.protest?'<p class="empty" style="margin-top:6px">* Partido protestado</p>':''}
+    ${m.advanced?'<p class="empty" style="margin-top:4px">✓ Ya avanzó a la siguiente fase</p>':''}
+    <div class="actions admin-only" style="margin-top:8px"><button class="link" onclick="editMatch('${m.id}')">Editar</button><button class="link danger" onclick="deleteMatch('${m.id}')">Borrar</button></div>
   </div>`;
+}
+function phaseBlock(ph, title){
+  const matches = state.matches.filter(m=>m.phase===ph);
+  return `<p class="empty" style="font-weight:700;color:var(--text);margin-top:12px">${title||PHASES[ph]}</p>
+    ${matches.length? matches.map(matchCard).join('') : '<p class="empty">Sin partidos cargados en esta fase.</p>'}`;
+}
+let octavosConfirm = false;
+function generateOctavosFromGroups(){
+  if(!isAdmin) return;
+  const msg = document.getElementById('bracket-msg');
+  if(state.matches.some(m=>m.phase==='octavos') && !octavosConfirm){
+    octavosConfirm = true;
+    if(msg){ msg.textContent='Ya hay partidos cargados en Octavos. Tocá el botón de nuevo para generar otra tanda igual (se suman, no se reemplazan).'; msg.style.display='block'; }
+    return;
+  }
+  octavosConfirm = false;
+  const a = computeStandings('A'), b = computeStandings('B');
+  const n = Math.min(a.length, b.length);
+  if(n<2){ if(msg){ msg.textContent='Hacen falta equipos en Grupo A y Grupo B para generar los cruces.'; msg.style.display='block'; } return; }
+  const half = Math.floor(n/2);
+  const pairs = [];
+  for(let i=0;i<half;i++) pairs.push([a[i], b[n-1-i]]);
+  for(let i=0;i<half;i++) pairs.push([b[i], a[n-1-i]]);
+  pairs.forEach(([home,away])=>{
+    state.matches.push({id:'m'+Date.now()+Math.random().toString(36).slice(2,7), date:'', home:home.id, away:away.id, hscore:null, ascore:null, phase:'octavos', protest:false});
+  });
+  persist();
+  if(msg){ msg.textContent=`Se generaron ${pairs.length} cruces de Octavos según la posición en cada grupo.`; msg.style.display='block'; }
+  renderBracket(); renderMatches(); renderResultados();
+}
+function advanceWinners(phase){
+  if(!isAdmin) return;
+  const map = ADVANCE_MAP[phase];
+  const msg = document.getElementById('bracket-msg');
+  if(!map) return;
+  const ready = state.matches.filter(m=>m.phase===phase && !m.advanced && m.hscore!==null && m.ascore!==null && (m.hscore!==m.ascore || (m.hpen!==null && m.hpen!==undefined && m.apen!==null && m.apen!==undefined && m.hpen!==m.apen)));
+  if(!ready.length){ if(msg){ msg.textContent='No hay partidos nuevos con resultado (sin empate, o con penales cargados) para avanzar en esta fase.'; msg.style.display='block'; } return; }
+  const winners=[], losers=[];
+  ready.forEach(m=>{
+    let w,l;
+    if(m.hscore!==m.ascore){ w = m.hscore>m.ascore ? m.home : m.away; l = m.hscore>m.ascore ? m.away : m.home; }
+    else { w = m.hpen>m.apen ? m.home : m.away; l = m.hpen>m.apen ? m.away : m.home; }
+    winners.push(w); losers.push(l);
+    m.advanced = true;
+  });
+  for(let i=0;i+1<winners.length;i+=2){
+    state.matches.push({id:'m'+Date.now()+Math.random().toString(36).slice(2,7)+'w', date:'', home:winners[i], away:winners[i+1], hscore:null, ascore:null, phase:map.winner, protest:false});
+  }
+  if(map.loser){
+    for(let i=0;i+1<losers.length;i+=2){
+      state.matches.push({id:'m'+Date.now()+Math.random().toString(36).slice(2,7)+'l', date:'', home:losers[i], away:losers[i+1], hscore:null, ascore:null, phase:map.loser, protest:false});
+    }
+  }
+  persist();
+  if(msg){ msg.textContent=`Se armaron los cruces de "${PHASES[map.winner]}"${map.loser?` y "${PHASES[map.loser]}"`:''} con los resultados cargados.`; msg.style.display='block'; }
+  renderBracket(); renderMatches(); renderResultados();
 }
 function renderBracket(){
   const el = document.getElementById('bracket-view');
   if(!el) return;
-  if(!state.matches.some(m=>PHASE_ORDER.includes(m.phase))){ el.innerHTML = '<p class="empty">Todavía no hay partidos de eliminatorias cargados.</p>'; return; }
-  el.innerHTML = `
-    <p class="empty" style="font-weight:700;color:var(--text)">Octavos de Final <span style="font-weight:400;color:var(--muted)">(16 equipos — ganadores a Copa de Oro, perdedores a Copa de Plata)</span></p>
-    <div class="table-wrap"><div style="display:flex;gap:16px;min-width:200px;margin-bottom:16px">${bracketColumn('octavos')}</div></div>
-
-    <p class="empty" style="font-weight:700;color:var(--primary)">🥇 Copa de Oro</p>
-    <div class="table-wrap"><div style="display:flex;gap:16px;min-width:750px;margin-bottom:16px">${ORO_ORDER.map(bracketColumn).join('')}</div></div>
-
-    <p class="empty" style="font-weight:700;color:var(--muted)">🥈 Copa de Plata</p>
-    <div class="table-wrap"><div style="display:flex;gap:16px;min-width:600px">${PLATA_ORDER.map(bracketColumn).join('')}</div></div>
-
-    ${state.matches.some(m=>m.protest && PHASE_ORDER.includes(m.phase))?'<p class="empty" style="margin-top:10px">* Partido protestado</p>':''}`;
+  const nav = BRACKET_TABS.map(ph=>`<button class="tab-btn${ph===currentBracketPhase?' active':''}" style="font-size:.78rem" onclick="selectBracketPhase('${ph}')">${bracketTabLabel(ph)}</button>`).join('');
+  let tools = '';
+  if(currentBracketPhase==='octavos') tools = `<button class="btn small admin-only" onclick="generateOctavosFromGroups()">Generar cruces desde la Tabla (1º A vs 8º B, etc.)</button>`;
+  else if(ADVANCE_MAP[currentBracketPhase]) tools = `<button class="btn small admin-only" onclick="advanceWinners('${currentBracketPhase}')">Avanzar ganadores/perdedores a la siguiente fase</button>`;
+  let content = phaseBlock(currentBracketPhase, currentBracketPhase==='octavos' ? 'Octavos de Final (16 equipos)' : null);
+  if(currentBracketPhase==='oro_final') content += phaseBlock('oro_tercer','3ª posición');
+  if(currentBracketPhase==='plata_final') content += phaseBlock('plata_tercer','3ª/4º posición');
+  el.innerHTML = `<nav style="margin:0 0 6px">${nav}</nav>${tools?`<div class="admin-only" style="margin-bottom:10px">${tools}<p class="empty" id="bracket-msg" style="display:none;margin-top:6px"></p></div>`:''}${content}`;
 }
 
 // ---- goleadores ----
@@ -1035,7 +1116,7 @@ function renderTransfers(){
 function computeStandings(group){
   const teams = group ? state.teams.filter(t=>t.group===group) : state.teams;
   const stats = {};
-  teams.forEach(t=> stats[t.id] = {name:t.name, pj:0,g:0,e:0,p:0,gf:0,gc:0,protest:false});
+  teams.forEach(t=> stats[t.id] = {id:t.id, name:t.name, pj:0,g:0,e:0,p:0,gf:0,gc:0,protest:false});
   state.matches.forEach(m=>{
     if((m.phase||'grupos')!=='grupos') return;
     if(m.hscore===null || m.ascore===null) return;
