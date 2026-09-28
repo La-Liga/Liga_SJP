@@ -70,6 +70,23 @@ body.admin-mode .actions.admin-only{display:flex;}
 body.admin-mode button.link.admin-only{display:inline;}
 .lock-note{color:var(--muted);font-size:.82rem;margin:0 0 14px;}
 body.admin-mode .lock-note{display:none;}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:50;display:none;overflow-y:auto;padding:calc(env(safe-area-inset-top,0px) + 12px) 12px 28px;}
+.modal.open{display:block;}
+.modal .sheet{max-width:560px;margin:0 auto;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;}
+.fase-h{font-weight:700;font-size:.95rem;margin:16px 0 6px;}
+.mrow{display:flex;align-items:center;gap:12px;padding:10px 4px;border-bottom:1px solid var(--border);cursor:pointer;}
+.mdate{width:54px;font-size:.8rem;color:var(--muted);flex-shrink:0;}
+.mteams{flex:1;min-width:0;}
+.mteams div,.mscore div{padding:2px 0;}
+.mmid{font-size:.75rem;color:var(--muted);}
+.mscore{text-align:right;min-width:36px;}
+.mtime{font-size:.85rem;color:var(--muted);}
+.b{font-weight:700;}
+.tbd{color:var(--muted);}
+sup{font-size:.7em;color:var(--muted);margin-left:2px;}
+.bcard{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:10px;cursor:pointer;}
+.brow{display:flex;justify-content:space-between;gap:10px;padding:3px 0;}
+.bmeta{font-size:.75rem;color:var(--muted);padding:2px 0;}
 </style>
 </head>
 <body>
@@ -173,47 +190,15 @@ body.admin-mode .lock-note{display:none;}
       </div>
     </div>
     <div class="card admin-only">
-      <button class="btn" onclick="toggleMatchForm()">+ Agregar partido</button>
-      <div id="match-form-fields" style="display:none;margin-top:12px">
-        <h2 id="match-form-title">Agregar partido</h2>
-        <div class="grid">
-          <div class="full"><label>Fase</label><select id="m-phase">
-            <option value="grupos">Grupos</option>
-            <option value="octavos">Octavos de Final (16 equipos)</option>
-            <option value="oro_cuartos">Copa de Oro — Cuartos de Final</option>
-            <option value="oro_semi">Copa de Oro — Semifinal</option>
-            <option value="oro_final">Copa de Oro — Final</option>
-            <option value="oro_tercer">Copa de Oro — 3er puesto</option>
-            <option value="oro_clas_cuartos">Clasificación 5º-8º</option>
-            <option value="oro_5to">5º puesto</option>
-            <option value="oro_7mo">7º puesto</option>
-            <option value="plata_cuartos">Copa de Plata — Cuartos de Final</option>
-            <option value="plata_semi">Copa de Plata — Semifinal</option>
-            <option value="plata_final">Copa de Plata — Final</option>
-            <option value="plata_tercer">Copa de Plata — 3er/4º puesto</option>
-          </select></div>
-          <div class="full"><label>Fecha</label><input type="date" id="m-date"></div>
-          <div><label>Local</label><select id="m-home"></select></div>
-          <div><label>Visitante</label><select id="m-away"></select></div>
-          <div><label>Goles local</label><input type="number" min="0" id="m-hscore"></div>
-          <div><label>Goles visitante</label><input type="number" min="0" id="m-ascore"></div>
-          <div><label>Penales local (si hubo)</label><input type="number" min="0" id="m-hpen"></div>
-          <div><label>Penales visitante (si hubo)</label><input type="number" min="0" id="m-apen"></div>
-          <div class="full"><label><input type="checkbox" id="m-protest"> Partido protestado</label></div>
-        </div>
-        <div class="row">
-          <button class="btn" onclick="saveMatch()">Guardar partido</button>
-          <button class="btn ghost" id="m-cancel" style="display:none" onclick="cancelMatchEdit()">Cancelar</button>
-        </div>
-      </div>
+      <button class="btn" onclick="openMatchAdd()">+ Agregar partido</button>
     </div>
     <p class="lock-note">Solo el administrador puede cargar o editar resultados.</p>
-    <div class="card"><h2>Partidos</h2><div id="matches-list"></div></div>
+    <div class="card"><h2>Próximos partidos</h2><div id="matches-list"></div></div>
   </div>
 
   <!-- RESULTADOS -->
   <div class="panel" id="panel-resultados">
-    <div class="card"><h2>Resultados anteriores</h2><div id="resultados-list"></div></div>
+    <div class="card"><h2>Resultados</h2><div id="resultados-list"></div></div>
   </div>
 
   <!-- ELIMINATORIAS -->
@@ -303,6 +288,52 @@ body.admin-mode .lock-note{display:none;}
   </div>
 </div>
 
+<div class="modal" id="detail-modal" onclick="if(event.target===this)closeDetail()">
+  <div class="sheet">
+    <div id="detail-body"></div>
+    <div class="row" style="margin-top:14px"><button class="btn ghost" onclick="closeDetail()">Cerrar</button></div>
+  </div>
+</div>
+
+<div class="modal" id="match-modal">
+  <div class="sheet">
+    <h2 id="match-form-title">Agregar partido</h2>
+    <div class="grid">
+      <div class="full"><label>Fase</label><select id="m-phase">
+        <option value="grupos">Fase de grupos</option>
+        <option value="octavos">Octavos de final</option>
+        <option value="oro_cuartos">Copa de Oro — Cuartos de final</option>
+        <option value="oro_semi">Copa de Oro — Semifinales</option>
+        <option value="oro_final">Copa de Oro — Final</option>
+        <option value="oro_tercer">Copa de Oro — 3ª posición</option>
+        <option value="oro_clas_cuartos">Clasificación 5º-8º — Semifinales</option>
+        <option value="oro_5to">Partido por el 5º puesto</option>
+        <option value="oro_7mo">Partido por el 7º puesto</option>
+        <option value="plata_cuartos">Copa de Plata — Cuartos de final</option>
+        <option value="plata_semi">Copa de Plata — Semifinales</option>
+        <option value="plata_final">Copa de Plata — Final</option>
+        <option value="plata_tercer">Copa de Plata — 3ª/4ª posición</option>
+      </select></div>
+      <div><label>Fecha</label><input type="date" id="m-date"></div>
+      <div><label>Hora</label><input type="time" id="m-time"></div>
+      <div><label>Local</label><select id="m-home"></select></div>
+      <div><label>Visitante</label><select id="m-away"></select></div>
+      <div><label>Goles local</label><input type="number" min="0" id="m-hscore"></div>
+      <div><label>Goles visitante</label><input type="number" min="0" id="m-ascore"></div>
+      <div><label>Penales local (si hubo)</label><input type="number" min="0" id="m-hpen"></div>
+      <div><label>Penales visitante (si hubo)</label><input type="number" min="0" id="m-apen"></div>
+      <div class="full"><label><input type="checkbox" id="m-protest"> Partido protestado</label></div>
+    </div>
+    <div class="row">
+      <button class="btn" onclick="saveMatch()">Guardar partido</button>
+      <button class="btn ghost" onclick="cancelMatchEdit()">Cancelar</button>
+    </div>
+    <p class="empty" id="m-err" style="display:none"></p>
+    <div id="match-modal-panel" style="margin-top:8px"></div>
+    <button class="link danger" id="m-delete" style="display:none;margin-top:10px" onclick="deleteMatchFromModal()">Borrar partido</button>
+  </div>
+</div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
@@ -320,37 +351,58 @@ function normalizeState(s){
   s.cards = s.cards || []; s.fines = s.fines || [];
   s.settings = s.settings || {};
   s.teams.forEach(t=>{ if(t.group===undefined) t.group=''; });
-  const OLD_PHASE_MAP = {cuartos:'oro_cuartos', semifinal:'oro_semi', final:'oro_final', oro_clasificacion:'oro_clas_cuartos'};
+  const OLD_PHASE_MAP = {cuartos:'oro_cuartos', semifinal:'oro_semi', final:'oro_final', oro_clasificacion:'oro_clas_cuartos', oro_clas_semi:'oro_clas_cuartos'};
+  const used = {};
   s.matches.forEach(m=>{
     if(!m.phase) m.phase='grupos';
     else if(OLD_PHASE_MAP[m.phase]) m.phase = OLD_PHASE_MAP[m.phase];
     if(m.protest===undefined) m.protest=false;
+    ['hscore','ascore','hpen','apen','home','away'].forEach(k=>{ if(m[k]===undefined) m[k]=null; });
+    if(m.date===undefined) m.date='';
+    if(m.time===undefined) m.time='';
+    if(m.slot!=null){ (used[m.phase]=used[m.phase]||new Set()).add(m.slot); }
+  });
+  s.matches.forEach(m=>{
+    if(m.phase!=='grupos' && m.slot==null){
+      const set = used[m.phase]=used[m.phase]||new Set();
+      let k=0; while(set.has(k)) k++;
+      m.slot=k; set.add(k);
+    }
   });
   return s;
 }
 const PHASES = {
-  grupos:'Grupos', octavos:'Octavos de Final',
-  oro_cuartos:'Copa de Oro — Cuartos', oro_semi:'Copa de Oro — Semifinal', oro_final:'Copa de Oro — Final', oro_tercer:'Copa de Oro — 3er puesto',
-  oro_clas_cuartos:'Clasificación 5º-8º', oro_5to:'5º puesto', oro_7mo:'7º puesto',
-  plata_cuartos:'Copa de Plata — Cuartos', plata_semi:'Copa de Plata — Semifinal', plata_final:'Copa de Plata — Final', plata_tercer:'Copa de Plata — 3er/4º puesto'
+  grupos:'Fase de grupos', octavos:'Octavos de final',
+  oro_cuartos:'Copa de Oro — Cuartos de final', oro_semi:'Copa de Oro — Semifinales', oro_final:'Copa de Oro — Final', oro_tercer:'Copa de Oro — 3ª posición',
+  oro_clas_cuartos:'Clasificación 5º-8º — Semifinales', oro_5to:'Partido por el 5º puesto', oro_7mo:'Partido por el 7º puesto',
+  plata_cuartos:'Copa de Plata — Cuartos de final', plata_semi:'Copa de Plata — Semifinales', plata_final:'Copa de Plata — Final', plata_tercer:'Copa de Plata — 3ª/4ª posición'
 };
 const ORO_ORDER = ['oro_cuartos','oro_semi','oro_final','oro_tercer','oro_clas_cuartos','oro_5to','oro_7mo'];
 const PLATA_ORDER = ['plata_cuartos','plata_semi','plata_final','plata_tercer'];
 const PHASE_ORDER = ['octavos', ...ORO_ORDER, ...PLATA_ORDER];
-const ADVANCE_MAP = {
-  octavos:          {winner:'oro_cuartos', loser:'plata_cuartos'},
-  oro_cuartos:      {winner:'oro_semi', loser:'oro_clas_cuartos'},
-  oro_semi:         {winner:'oro_final', loser:'oro_tercer'},
-  oro_clas_cuartos: {winner:'oro_5to', loser:'oro_7mo'},
-  plata_cuartos:    {winner:'plata_semi', loser:null},
-  plata_semi:       {winner:'plata_final', loser:'plata_tercer'}
+const PLAY_ORDER = ['grupos','octavos','oro_cuartos','plata_cuartos','oro_semi','oro_clas_cuartos','plata_semi','oro_final','oro_tercer','oro_5to','oro_7mo','plata_final','plata_tercer'];
+// De dónde sale cada cruce: el local es el ganador/perdedor del partido 2i y el visitante el del 2i+1 de la fase anterior
+const FEEDS = {
+  oro_cuartos:      {from:'octavos', take:'winner'},
+  plata_cuartos:    {from:'octavos', take:'loser'},
+  oro_semi:         {from:'oro_cuartos', take:'winner'},
+  oro_clas_cuartos: {from:'oro_cuartos', take:'loser'},
+  plata_semi:       {from:'plata_cuartos', take:'winner'},
+  oro_final:        {from:'oro_semi', take:'winner'},
+  oro_tercer:       {from:'oro_semi', take:'loser'},
+  oro_5to:          {from:'oro_clas_cuartos', take:'winner'},
+  oro_7mo:          {from:'oro_clas_cuartos', take:'loser'},
+  plata_final:      {from:'plata_semi', take:'winner'},
+  plata_tercer:     {from:'plata_semi', take:'loser'}
 };
+const SYNC_ORDER = ['oro_cuartos','plata_cuartos','oro_semi','oro_clas_cuartos','plata_semi','oro_final','oro_tercer','oro_5to','oro_7mo','plata_final','plata_tercer'];
+const PHASE_SIZE = {octavos:8, oro_cuartos:4, plata_cuartos:4, oro_semi:2, oro_clas_cuartos:2, plata_semi:2, oro_final:1, oro_tercer:1, oro_5to:1, oro_7mo:1, plata_final:1, plata_tercer:1};
 state = normalizeState(state);
 let reglamentoData = null;
 
 function persistLocal(){ try{ localStorage.setItem('liga-crm-data', JSON.stringify(state)); }catch(e){} }
 function renderAll(){
-  applyAdmin(); renderTeams(); renderMatches(); renderResultados(); renderBracket(); renderGoals(); renderCards(); renderFines(); renderWindows(); renderTransfers(); renderStandings();
+  applyAdmin(); renderTeams(); renderMatches(); renderResultados(); renderBracket(); renderGoals(); renderCards(); renderFines(); renderWindows(); renderTransfers(); renderStandings(); if(detailId) renderDetail();
 }
 
 // ---- sync (Firebase Realtime Database) ----
@@ -412,7 +464,7 @@ function fillSelect(id, html){
   if([...el.options].some(o=>o.value===prev)) el.value = prev;
 }
 function norm(s){ return (s||'').trim().toLowerCase(); }
-function teamName(id){ const t=state.teams.find(x=>x.id===id); return t?t.name:'Equipo eliminado'; }
+function teamName(id){ if(!id) return 'Por definir'; const t=state.teams.find(x=>x.id===id); return t?t.name:'Equipo eliminado'; }
 function playerName(id){ const p=state.players.find(x=>x.id===id); return p?p.name:'Jugador eliminado'; }
 function playerTeam(id){ const p=state.players.find(x=>x.id===id); return p?p.team:null; }
 function windowName(id){ const w=state.windows.find(x=>x.id===id); return w?w.name:'—'; }
@@ -489,6 +541,7 @@ document.querySelectorAll('.tab-btn').forEach(b=>{
     document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));
     b.classList.add('active');
     document.getElementById('panel-'+b.dataset.tab).classList.add('active');
+    try{ localStorage.setItem('liga-last-tab', b.dataset.tab); }catch(e){}
     if(b.dataset.tab==='partidos') fillTeamSelects();
     if(b.dataset.tab==='resultados') renderResultados();
     if(b.dataset.tab==='eliminatorias') renderBracket();
@@ -666,50 +719,84 @@ function deletePlayer(id){
 
 // ---- matches ----
 let editingMatchId = null;
+
+let detailId = null, delConfirm = false, bracketMsg = '';
+function isPlayed(m){ return m.hscore!=null && m.ascore!=null; }
+function fmtDate(d){ if(!d) return '—'; const p=String(d).split('-'); return p.length===3 ? p[2]+'.'+p[1]+'.' : d; }
+function fmtDateFull(d){ if(!d) return ''; const p=String(d).split('-'); return p.length===3 ? p[2]+'.'+p[1]+'.'+p[0] : d; }
+function matchOutcome(m){
+  if(!m || !isPlayed(m) || !m.home || !m.away) return null;
+  if(m.hscore>m.ascore) return {w:m.home,l:m.away};
+  if(m.hscore<m.ascore) return {w:m.away,l:m.home};
+  if(m.hpen!=null && m.apen!=null && m.hpen!==m.apen) return m.hpen>m.apen ? {w:m.home,l:m.away} : {w:m.away,l:m.home};
+  return null;
+}
+function hasPens(m){ return isPlayed(m) && m.hscore===m.ascore && m.hpen!=null && m.apen!=null; }
+function openModal(id){ const el=document.getElementById(id); if(el) el.classList.add('open'); }
+function closeModal(id){ const el=document.getElementById(id); if(el) el.classList.remove('open'); }
+function renderMatchViews(){ renderMatches(); renderResultados(); renderBracket(); renderStandings(); if(detailId) renderDetail(); }
+
+// ---- cuadro automático: el ganador/perdedor pasa solo a su lugar en la fase siguiente ----
+function findSlot(ph,i){ return state.matches.find(m=>m.phase===ph && m.slot===i); }
+function nextSlot(ph, exceptId){
+  const used = new Set(state.matches.filter(x=>x.phase===ph && x.id!==exceptId && x.slot!=null).map(x=>x.slot));
+  let k=0; while(used.has(k)) k++; return k;
+}
+function feedTeam(f, i){
+  const o = matchOutcome(findSlot(f.from, i));
+  if(!o) return null;
+  return f.take==='winner' ? o.w : o.l;
+}
+function syncBracket(){
+  SYNC_ORDER.forEach(ph=>{
+    const f = FEEDS[ph];
+    for(let i=0;i<PHASE_SIZE[ph];i++){
+      const a = feedTeam(f, 2*i), b = feedTeam(f, 2*i+1);
+      const m = findSlot(ph, i);
+      if(!m){
+        if(!a && !b) continue;
+        state.matches.push({id:'m'+Date.now()+Math.random().toString(36).slice(2,7), date:'', time:'', home:a||null, away:b||null, hscore:null, ascore:null, hpen:null, apen:null, phase:ph, slot:i, protest:false});
+      } else if(!isPlayed(m)){
+        if(a) m.home = a;
+        if(b) m.away = b;
+      }
+    }
+  });
+}
+
+// ---- formulario de partido (ventana flotante, se abre en cualquier pestaña) ----
 function fillTeamSelects(){
-  const opts = state.teams.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');
-  fillSelect('m-home', opts || '<option value="">Sin equipos</option>');
-  fillSelect('m-away', opts || '<option value="">Sin equipos</option>');
+  const opts = '<option value="">Por definir</option>' + state.teams.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');
+  fillSelect('m-home', opts); fillSelect('m-away', opts);
 }
-function saveMatch(){
-  if(!isAdmin) return;
-  const home = document.getElementById('m-home').value;
-  const away = document.getElementById('m-away').value;
-  if(!home || !away || home===away) return;
-  const hs = document.getElementById('m-hscore').value;
-  const as = document.getElementById('m-ascore').value;
-  const hp = document.getElementById('m-hpen').value;
-  const ap = document.getElementById('m-apen').value;
-  const data = {date:document.getElementById('m-date').value, home, away, hscore:hs===''?null:parseInt(hs), ascore:as===''?null:parseInt(as), hpen:hp===''?null:parseInt(hp), apen:ap===''?null:parseInt(ap), phase:document.getElementById('m-phase').value, protest:document.getElementById('m-protest').checked};
-  if(editingMatchId){ Object.assign(state.matches.find(x=>x.id===editingMatchId), data); }
-  else{ state.matches.push({id:'m'+Date.now(), ...data}); }
-  persist(); cancelMatchEdit(); renderMatches(); renderBracket(); renderResultados();
-}
-function toggleMatchForm(){
-  const el = document.getElementById('match-form-fields');
-  if(el) el.style.display = el.style.display==='none' ? 'block' : 'none';
-}
-function toggleFixtureForm(){
-  const el = document.getElementById('fixture-form-fields');
-  if(el) el.style.display = el.style.display==='none' ? 'block' : 'none';
-}
-function cancelMatchEdit(){
-  editingMatchId = null;
-  document.getElementById('m-date').value=''; document.getElementById('m-hscore').value=''; document.getElementById('m-ascore').value='';
-  document.getElementById('m-hpen').value=''; document.getElementById('m-apen').value='';
-  document.getElementById('m-phase').value='grupos'; document.getElementById('m-protest').checked=false;
+function resetMatchForm(){
+  editingMatchId = null; delConfirm = false;
+  ['m-date','m-time','m-hscore','m-ascore','m-hpen','m-apen'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('m-phase').value='grupos';
+  document.getElementById('m-protest').checked=false;
+  document.getElementById('m-home').value=''; document.getElementById('m-away').value='';
   document.getElementById('match-form-title').textContent='Agregar partido';
-  document.getElementById('m-cancel').style.display='none';
-  document.getElementById('match-form-fields').style.display='none';
+  document.getElementById('m-err').style.display='none';
+  const del = document.getElementById('m-delete'); del.style.display='none'; del.textContent='Borrar partido';
+  document.getElementById('match-modal-panel').innerHTML='';
 }
+function openMatchAdd(){
+  if(!isAdmin) return;
+  fillTeamSelects(); resetMatchForm();
+  document.getElementById('match-modal-panel').innerHTML='<p class="empty">Guardá el partido para poder cargar goles y tarjetas.</p>';
+  openModal('match-modal');
+}
+function cancelMatchEdit(){ resetMatchForm(); closeModal('match-modal'); }
 function editMatch(id){
   if(!isAdmin) return;
   const m = state.matches.find(x=>x.id===id); if(!m) return;
+  closeDetail();
+  fillTeamSelects(); resetMatchForm();
   editingMatchId = id;
-  fillTeamSelects();
-  document.getElementById('m-date').value=m.date;
-  document.getElementById('m-home').value=m.home;
-  document.getElementById('m-away').value=m.away;
+  document.getElementById('m-date').value=m.date||'';
+  document.getElementById('m-time').value=m.time||'';
+  document.getElementById('m-home').value=m.home||'';
+  document.getElementById('m-away').value=m.away||'';
   document.getElementById('m-hscore').value=m.hscore ?? '';
   document.getElementById('m-ascore').value=m.ascore ?? '';
   document.getElementById('m-hpen').value=m.hpen ?? '';
@@ -717,14 +804,207 @@ function editMatch(id){
   document.getElementById('m-phase').value=m.phase||'grupos';
   document.getElementById('m-protest').checked=!!m.protest;
   document.getElementById('match-form-title').textContent='Editar partido';
-  document.getElementById('m-cancel').style.display='inline-block';
-  document.getElementById('match-form-fields').style.display='block';
-  window.scrollTo({top:0,behavior:'smooth'});
+  document.getElementById('m-delete').style.display='inline';
+  renderMatchPanel(id);
+  openModal('match-modal');
+}
+function saveMatch(){
+  if(!isAdmin) return;
+  const err = document.getElementById('m-err'); err.style.display='none';
+  const phase = document.getElementById('m-phase').value;
+  const home = document.getElementById('m-home').value || null;
+  const away = document.getElementById('m-away').value || null;
+  if(phase==='grupos' && (!home || !away)){ err.textContent='Elegí los dos equipos.'; err.style.display='block'; return; }
+  if(home && away && home===away){ err.textContent='Los equipos tienen que ser distintos.'; err.style.display='block'; return; }
+  const num = id=>{ const v=document.getElementById(id).value; return v===''?null:parseInt(v); };
+  const data = {date:document.getElementById('m-date').value, time:document.getElementById('m-time').value, home, away, hscore:num('m-hscore'), ascore:num('m-ascore'), hpen:num('m-hpen'), apen:num('m-apen'), phase, protest:document.getElementById('m-protest').checked};
+  const existing = editingMatchId ? state.matches.find(x=>x.id===editingMatchId) : null;
+  if(PHASE_ORDER.includes(phase) && (!existing || existing.phase!==phase || existing.slot==null)) data.slot = nextSlot(phase, editingMatchId);
+  if(existing){ Object.assign(existing, data); if(!PHASE_ORDER.includes(phase)) delete existing.slot; }
+  else state.matches.push({id:'m'+Date.now(), ...data});
+  syncBracket();
+  persist(); cancelMatchEdit(); renderMatchViews();
 }
 function deleteMatch(id){
   if(!isAdmin) return;
   state.matches = state.matches.filter(x=>x.id!==id);
-  persist(); renderMatches(); renderBracket(); renderResultados();
+  persist(); renderMatchViews();
+}
+function deleteMatchFromModal(){
+  if(!isAdmin || !editingMatchId) return;
+  const btn = document.getElementById('m-delete');
+  if(!delConfirm){ delConfirm=true; btn.textContent='¿Seguro? Tocá de nuevo para borrar'; return; }
+  const id = editingMatchId; cancelMatchEdit(); deleteMatch(id);
+}
+function toggleFixtureForm(){
+  const el = document.getElementById('fixture-form-fields');
+  if(el) el.style.display = el.style.display==='none' ? 'block' : 'none';
+}
+function renderMatchPanel(id){
+  const el = document.getElementById('match-modal-panel');
+  if(!el || editingMatchId!==id) return;
+  const m = state.matches.find(x=>x.id===id); if(!m) return;
+  const opts = state.players.filter(p=>p.team===m.home || p.team===m.away)
+    .map(p=>`<option value="${p.id}">${esc(p.name)} (${esc(teamName(p.team))})</option>`).join('') || '<option value="">Sin jugadores en estos equipos</option>';
+  const goals = state.goals.filter(g=>g.match===id);
+  const cards = state.cards.filter(c=>c.match===id);
+  el.innerHTML = `
+    <p class="fase-h">Goles y tarjetas de este partido</p>
+    <div class="row"><select id="qg-player-${id}">${opts}</select><input type="number" min="1" value="1" id="qg-goals-${id}" style="max-width:64px"><button class="btn small" onclick="addQuickGoal('${id}')">+ Gol</button></div>
+    <div class="row" style="margin-top:6px"><select id="qc-player-${id}">${opts}</select><select id="qc-type-${id}" style="max-width:110px"><option value="Amarilla">Amarilla</option><option value="Roja">Roja</option></select><button class="btn small" onclick="addQuickCard('${id}')">+ Tarjeta</button></div>
+    ${goals.length?`<p class="empty" style="margin-top:8px">${goals.map(g=>`⚽ ${esc(playerName(g.player))} (${g.goals}) <button class="link danger" onclick="deleteGoal('${g.id}');renderMatchPanel('${id}')">x</button>`).join(' &nbsp; ')}</p>`:''}
+    ${cards.length?`<p class="empty">${cards.map(c=>`${c.type==='Roja'?'🟥':'🟨'} ${esc(playerName(c.player))} <button class="link danger" onclick="deleteCard('${c.id}');renderMatchPanel('${id}')">x</button>`).join(' &nbsp; ')}</p>`:''}`;
+}
+
+// ---- detalle de partido (para todos; no cambia de pestaña) ----
+function openMatchDetail(id){ detailId=id; renderDetail(); openModal('detail-modal'); }
+function closeDetail(){ detailId=null; closeModal('detail-modal'); }
+function editMatchFromDetail(){ if(detailId) editMatch(detailId); }
+function renderDetail(){
+  const body = document.getElementById('detail-body');
+  const m = state.matches.find(x=>x.id===detailId);
+  if(!m){ closeDetail(); return; }
+  const played = isPlayed(m), pens = hasPens(m);
+  const goals = state.goals.filter(g=>g.match===m.id);
+  const cards = state.cards.filter(c=>c.match===m.id);
+  const when = [fmtDateFull(m.date), m.time].filter(Boolean).join(' ');
+  body.innerHTML = `
+    <p class="empty" style="margin:0">${PHASES[m.phase||'grupos']}${when?' — '+esc(when):''}</p>
+    <div style="display:flex;justify-content:space-between;align-items:center;text-align:center;gap:8px;margin:14px 0">
+      <div style="flex:1" class="team-a">${esc(teamName(m.home))}</div>
+      <div style="font-size:1.8rem;font-weight:700;white-space:nowrap">${played? m.hscore+' - '+m.ascore : 'vs'}</div>
+      <div style="flex:1" class="team-a">${esc(teamName(m.away))}</div>
+    </div>
+    ${played?`<p class="empty" style="text-align:center;margin:0">Finalizado${pens?' — penales '+m.hpen+' - '+m.apen:''}</p>`:''}
+    ${m.protest?'<p class="empty">* Partido protestado</p>':''}
+    ${goals.length?`<p class="fase-h">Goles</p>${goals.map(g=>`<div>⚽ ${esc(playerName(g.player))} <span class="empty">(${esc(teamName(playerTeam(g.player)))})</span>${g.goals>1?' x'+g.goals:''}</div>`).join('')}`:''}
+    ${cards.length?`<p class="fase-h">Tarjetas</p>${cards.map(c=>`<div>${c.type==='Roja'?'🟥':'🟨'} ${esc(playerName(c.player))} <span class="empty">(${esc(teamName(playerTeam(c.player)))})</span></div>`).join('')}`:''}
+    <button class="btn small admin-only" style="margin-top:12px" onclick="editMatchFromDetail()">Editar partido</button>`;
+}
+
+// ---- pestaña Partidos: solo lo que todavía no se jugó ----
+function renderMatches(){
+  fillTeamSelects();
+  const el = document.getElementById('matches-list');
+  const list = state.matches.filter(m=>!isPlayed(m) && m.home && m.away);
+  if(!list.length){ el.innerHTML='<p class="empty">No hay partidos pendientes.</p>'; return; }
+  el.innerHTML = PLAY_ORDER.map(ph=>{
+    const ms = list.filter(m=>(m.phase||'grupos')===ph).sort((a,b)=> (a.date||'9999').localeCompare(b.date||'9999') || (a.time||'').localeCompare(b.time||''));
+    if(!ms.length) return '';
+    return `<p class="fase-h">${PHASES[ph]}</p>` + ms.map(m=>`<div class="mrow" onclick="openMatchDetail('${m.id}')">
+      <div class="mdate">${fmtDate(m.date)}</div>
+      <div class="mteams"><div>${esc(teamName(m.home))}</div><div>${esc(teamName(m.away))}</div></div>
+      <div class="mtime">${esc(m.time||'')}${m.protest?' *':''}</div>
+      <button class="link admin-only" onclick="event.stopPropagation();editMatch('${m.id}')">Editar</button>
+    </div>`).join('');
+  }).join('') + (list.some(m=>m.protest)?'<p class="empty">* Partido protestado</p>':'');
+}
+
+// ---- pestaña Resultados: agrupados por fase, como en la app de referencia ----
+function resultRow(m){
+  const o = matchOutcome(m), w = o ? o.w : null, pens = hasPens(m);
+  const b = id => (id && id===w) ? 'b' : '';
+  const sc = (v,p)=> v + (pens ? '<sup>('+p+')</sup>' : '');
+  return `<div class="mrow" onclick="openMatchDetail('${m.id}')">
+    <div class="mdate">${fmtDate(m.date)}</div>
+    <div class="mteams"><div class="${b(m.home)}">${esc(teamName(m.home))}</div><div class="${b(m.away)}">${esc(teamName(m.away))}</div></div>
+    <div class="mmid">${pens?'Tras pen.':''}</div>
+    <div class="mscore"><div class="${b(m.home)}">${sc(m.hscore,m.hpen)}${m.protest?' *':''}</div><div class="${b(m.away)}">${sc(m.ascore,m.apen)}</div></div>
+    <button class="link admin-only" onclick="event.stopPropagation();editMatch('${m.id}')">Editar</button>
+  </div>`;
+}
+function renderResultados(){
+  const el = document.getElementById('resultados-list');
+  if(!el) return;
+  const played = state.matches.filter(isPlayed);
+  if(!played.length){ el.innerHTML='<p class="empty">Todavía no hay resultados cargados.</p>'; return; }
+  const FULL = ['grupos', ...PHASE_ORDER];
+  const phases = [...new Set(played.map(m=>m.phase||'grupos'))];
+  const maxD = ph => played.filter(m=>(m.phase||'grupos')===ph).reduce((a,m)=> (m.date||'')>a ? (m.date||'') : a, '');
+  phases.sort((a,b)=>{ const da=maxD(a), db=maxD(b); return da!==db ? db.localeCompare(da) : FULL.indexOf(b)-FULL.indexOf(a); });
+  el.innerHTML = phases.map(ph=>`<p class="fase-h">${PHASES[ph]}</p>` +
+    played.filter(m=>(m.phase||'grupos')===ph).sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(resultRow).join('')
+  ).join('') + (played.some(m=>m.protest)?'<p class="empty">* Partido protestado</p>':'');
+}
+
+// ---- pestaña Eliminatorias ----
+let currentBracketPhase = (()=>{ try{ return localStorage.getItem('liga-bracket-tab') || 'octavos'; }catch(e){ return 'octavos'; } })();
+const BRACKET_TABS = [
+  {key:'octavos', label:'Octavos', blocks:[['octavos','Octavos de final']]},
+  {key:'oro_cuartos', label:'🥇 Cuartos', blocks:[['oro_cuartos','Copa de Oro — Cuartos de final']]},
+  {key:'oro_semi', label:'🥇 Semifinales', blocks:[['oro_semi','Copa de Oro — Semifinales']]},
+  {key:'oro_final', label:'🥇 Final', blocks:[['oro_final','Final de la Copa de Oro'],['oro_tercer','3ª posición']]},
+  {key:'oro_clas', label:'🥇 5º al 8º', blocks:[['oro_clas_cuartos','Semifinales 5º-8º'],['oro_5to','Partido por el 5º puesto'],['oro_7mo','Partido por el 7º puesto']]},
+  {key:'plata_cuartos', label:'🥈 Cuartos', blocks:[['plata_cuartos','Copa de Plata — Cuartos de final']]},
+  {key:'plata_semi', label:'🥈 Semifinales', blocks:[['plata_semi','Copa de Plata — Semifinales']]},
+  {key:'plata_final', label:'🥈 Final', blocks:[['plata_final','Final de la Copa de Plata'],['plata_tercer','3ª posición']]}
+];
+function selectBracketPhase(k){
+  currentBracketPhase = k; bracketMsg = '';
+  try{ localStorage.setItem('liga-bracket-tab', k); }catch(e){}
+  renderBracket();
+}
+function bracketCard(m){
+  if(!m) return `<div class="bcard"><div class="brow"><span class="tbd">Por definir</span></div><div class="brow"><span class="tbd">Por definir</span></div></div>`;
+  const played = isPlayed(m), o = matchOutcome(m), w = o ? o.w : null, pens = hasPens(m);
+  const row = (id, sc, pen)=>{
+    const bold = (id && id===w) ? 'b' : '';
+    return `<div class="brow"><span class="${id?'':'tbd'} ${bold}">${id?esc(teamName(id)):'Por definir'}</span><span class="${bold}">${played?sc:''}${pens?'<sup>('+pen+')</sup>':''}</span></div>`;
+  };
+  const meta = (m.date||m.time) ? `<div class="bmeta">${fmtDate(m.date)} ${esc(m.time||'')}</div>` : '';
+  const tie = (played && m.hscore===m.ascore && !pens) ? '<div class="bmeta">Empate: falta cargar los penales para definir al ganador</div>' : '';
+  return `<div class="bcard" onclick="openMatchDetail('${m.id}')">${meta}${row(m.home,m.hscore,m.hpen)}${row(m.away,m.ascore,m.apen)}${m.protest?'<div class="bmeta">* Partido protestado</div>':''}${tie}<button class="link admin-only" onclick="event.stopPropagation();editMatch('${m.id}')">Editar</button></div>`;
+}
+function slotCards(ph){
+  const all = state.matches.filter(m=>m.phase===ph);
+  const shown = new Set(); let html = '';
+  for(let i=0;i<(PHASE_SIZE[ph]||0);i++){
+    const m = all.find(x=>x.slot===i);
+    if(m) shown.add(m.id);
+    html += bracketCard(m);
+  }
+  all.filter(m=>!shown.has(m.id)).forEach(m=>{ html += bracketCard(m); });
+  return html;
+}
+function generateOctavosFromGroups(){
+  if(!isAdmin) return;
+  const a = computeStandings('A'), b = computeStandings('B');
+  const n = Math.min(a.length, b.length);
+  if(n<2){ bracketMsg='Hacen falta equipos en Grupo A y Grupo B para generar los cruces.'; renderBracket(); return; }
+  if(state.matches.some(m=>PHASE_ORDER.includes(m.phase)) && !octavosConfirm){
+    octavosConfirm = true;
+    bracketMsg='Ya hay partidos de eliminatorias. Tocá el botón de nuevo para volver a generar el cuadro (se reemplazan los cruces actuales).';
+    renderBracket(); return;
+  }
+  octavosConfirm = false;
+  state.matches = state.matches.filter(m=>!PHASE_ORDER.includes(m.phase));
+  const half = Math.floor(n/2);
+  const order = half===4 ? [0,3,1,2] : [...Array(half).keys()];
+  const pairs = [];
+  order.forEach(i=>pairs.push([a[i], b[n-1-i]]));
+  order.forEach(i=>pairs.push([b[i], a[n-1-i]]));
+  pairs.forEach(([h,aw],slot)=>{
+    state.matches.push({id:'m'+Date.now()+Math.random().toString(36).slice(2,7), date:'', time:'', home:h.id, away:aw.id, hscore:null, ascore:null, hpen:null, apen:null, phase:'octavos', slot, protest:false});
+  });
+  persist();
+  bracketMsg = 'Se generaron '+pairs.length+' cruces de Octavos según la posición en cada grupo.';
+  renderMatchViews();
+}
+let octavosConfirm = false;
+function renderBracket(){
+  const el = document.getElementById('bracket-view');
+  if(!el) return;
+  const tab = BRACKET_TABS.find(t=>t.key===currentBracketPhase) || BRACKET_TABS[0];
+  const nav = BRACKET_TABS.map(t=>`<button class="tab-btn${t.key===tab.key?' active':''}" style="font-size:.78rem" onclick="selectBracketPhase('${t.key}')">${t.label}</button>`).join('');
+  const tools = tab.key==='octavos'
+    ? `<div class="admin-only" style="margin-bottom:10px"><button class="btn small" onclick="generateOctavosFromGroups()">Generar cruces desde la Tabla (1º A vs 8º B, etc.)</button></div>` : '';
+  const msg = bracketMsg ? `<p class="empty">${esc(bracketMsg)}</p>` : '';
+  const blocks = tab.blocks.map(([ph,title])=>`<p class="fase-h">${title}</p>${slotCards(ph)}`).join('');
+  el.innerHTML = `<nav style="margin:0 0 6px">${nav}</nav>${tools}${msg}${blocks}`;
+}
+function toggleFixtureForm(){
+  const el = document.getElementById('fixture-form-fields');
+  if(el) el.style.display = el.style.display==='none' ? 'block' : 'none';
 }
 function generateFixture(){
   if(!isAdmin) return;
@@ -761,43 +1041,6 @@ function generateFixture(){
   document.getElementById('fx-start').value='';
   renderMatches();
 }
-function renderMatches(){
-  fillTeamSelects();
-  const el = document.getElementById('matches-list');
-  const list = state.matches.filter(m=>(m.phase||'grupos')==='grupos').sort((a,b)=> (a.date||'').localeCompare(b.date||''));
-  if(!list.length){ el.innerHTML='<p class="empty">No hay partidos cargados todavía.</p>'; return; }
-  el.innerHTML = `<div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Local</th><th class="num">·</th><th>Visitante</th><th></th></tr></thead><tbody>
-  ${list.map(m=>{
-    return `<tr>
-      <td>${m.date||'—'}</td><td>${esc(teamName(m.home))}</td>
-      <td class="num">vs${m.protest?' *':''}</td><td>${esc(teamName(m.away))}</td>
-      <td class="actions admin-only"><button class="link" onclick="editMatch('${m.id}')">Editar</button><button class="link danger" onclick="deleteMatch('${m.id}')">Borrar</button><button class="link" onclick="toggleMatchPanel('${m.id}')">⚽📋</button></td>
-    </tr>
-    <tr id="match-panel-${m.id}" class="admin-only" style="display:none"><td colspan="5"><div id="match-panel-content-${m.id}"></div></td></tr>`;
-  }).join('')}
-  </tbody></table></div>${state.matches.some(m=>m.protest)?'<p class="empty">* Partido protestado — el resultado está en la pestaña Resultados</p>':'<p class="empty">El resultado se ve en la pestaña Resultados</p>'}`;
-}
-function toggleMatchPanel(id){
-  const row = document.getElementById('match-panel-'+id);
-  if(!row) return;
-  row.style.display = row.style.display==='none' ? 'table-row' : 'none';
-  if(row.style.display==='table-row') renderMatchPanel(id);
-}
-function renderMatchPanel(id){
-  const el = document.getElementById('match-panel-content-'+id);
-  if(!el) return;
-  const m = state.matches.find(x=>x.id===id); if(!m) return;
-  const opts = state.players.filter(p=>p.team===m.home || p.team===m.away)
-    .map(p=>`<option value="${p.id}">${esc(p.name)} (${esc(teamName(p.team))})</option>`).join('') || '<option value="">Sin jugadores en estos equipos</option>';
-  const goals = state.goals.filter(g=>g.match===id);
-  const cards = state.cards.filter(c=>c.match===id);
-  el.innerHTML = `
-    <div class="row"><select id="qg-player-${id}">${opts}</select><input type="number" min="1" value="1" id="qg-goals-${id}" style="max-width:64px"><button class="btn small" onclick="addQuickGoal('${id}')">+ Gol</button></div>
-    <div class="row" style="margin-top:6px"><select id="qc-player-${id}">${opts}</select><select id="qc-type-${id}" style="max-width:110px"><option value="Amarilla">Amarilla</option><option value="Roja">Roja</option></select><button class="btn small" onclick="addQuickCard('${id}')">+ Tarjeta</button></div>
-    ${goals.length?`<p class="empty" style="margin-top:8px">${goals.map(g=>`⚽ ${esc(playerName(g.player))} (${g.goals}) <button class="link danger" onclick="deleteGoal('${g.id}');renderMatchPanel('${id}')">x</button>`).join(' &nbsp; ')}</p>`:''}
-    ${cards.length?`<p class="empty">${cards.map(c=>`${c.type==='Roja'?'🟥':'🟨'} ${esc(playerName(c.player))} <button class="link danger" onclick="deleteCard('${c.id}');renderMatchPanel('${id}')">x</button>`).join(' &nbsp; ')}</p>`:''}
-  `;
-}
 function addQuickGoal(matchId){
   if(!isAdmin) return;
   const player = document.getElementById('qg-player-'+matchId).value;
@@ -812,112 +1055,6 @@ function addQuickCard(matchId){
   if(!player) return;
   state.cards.push({id:'c'+Date.now(), player, type:document.getElementById('qc-type-'+matchId).value, match:matchId});
   persist(); renderMatchPanel(matchId); renderCards();
-}
-function renderResultados(){
-  const el = document.getElementById('resultados-list');
-  if(!el) return;
-  const list = state.matches.filter(m=>m.hscore!==null && m.ascore!==null).sort((a,b)=> (b.date||'').localeCompare(a.date||''));
-  if(!list.length){ el.innerHTML='<p class="empty">Todavía no hay resultados cargados.</p>'; return; }
-  el.innerHTML = `<div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Fase</th><th>Local</th><th class="num">·</th><th>Visitante</th></tr></thead><tbody>
-  ${list.map(m=>`<tr>
-      <td>${m.date||'—'}</td><td>${PHASES[m.phase||'grupos']}</td><td>${esc(teamName(m.home))}</td>
-      <td class="num">${m.hscore} - ${m.ascore}${(m.hpen!=null && m.apen!=null)?` (pen. ${m.hpen}-${m.apen})`:''}${m.protest?' *':''}</td><td>${esc(teamName(m.away))}</td>
-    </tr>`).join('')}
-  </tbody></table></div>${list.some(m=>m.protest)?'<p class="empty">* Partido protestado</p>':''}`;
-}
-let currentBracketPhase = 'octavos';
-const BRACKET_TABS = ['octavos','oro_cuartos','oro_semi','oro_final','oro_clas_cuartos','oro_5to','oro_7mo','plata_cuartos','plata_semi','plata_final'];
-function bracketTabLabel(ph){
-  if(ph==='octavos') return 'Octavos';
-  if(ph.startsWith('oro_')) return '🥇 '+PHASES[ph].replace('Copa de Oro — ','');
-  if(ph.startsWith('plata_')) return '🥈 '+PHASES[ph].replace('Copa de Plata — ','');
-  return PHASES[ph];
-}
-function selectBracketPhase(ph){ currentBracketPhase = ph; renderBracket(); }
-function matchCard(m){
-  const played = m.hscore!==null && m.ascore!==null;
-  return `<div class="card" style="padding:14px 16px;margin-bottom:10px">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
-      <span class="team-a">${esc(teamName(m.home))}</span>
-      <span style="font-weight:700;font-size:1.1rem">${played?m.hscore:'—'}</span>
-    </div>
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:6px">
-      <span class="team-a">${esc(teamName(m.away))}</span>
-      <span style="font-weight:700;font-size:1.1rem">${played?m.ascore:'—'}</span>
-    </div>
-    ${(m.hpen!=null && m.apen!=null)?`<p class="empty" style="margin-top:4px">Penales: ${m.hpen} - ${m.apen}</p>`:''}
-    ${m.protest?'<p class="empty" style="margin-top:6px">* Partido protestado</p>':''}
-    ${m.advanced?'<p class="empty" style="margin-top:4px">✓ Ya avanzó a la siguiente fase</p>':''}
-    <div class="actions admin-only" style="margin-top:8px"><button class="link" onclick="editMatch('${m.id}')">Editar</button><button class="link danger" onclick="deleteMatch('${m.id}')">Borrar</button></div>
-  </div>`;
-}
-function phaseBlock(ph, title){
-  const matches = state.matches.filter(m=>m.phase===ph);
-  return `<p class="empty" style="font-weight:700;color:var(--text);margin-top:12px">${title||PHASES[ph]}</p>
-    ${matches.length? matches.map(matchCard).join('') : '<p class="empty">Sin partidos cargados en esta fase.</p>'}`;
-}
-let octavosConfirm = false;
-function generateOctavosFromGroups(){
-  if(!isAdmin) return;
-  const msg = document.getElementById('bracket-msg');
-  if(state.matches.some(m=>m.phase==='octavos') && !octavosConfirm){
-    octavosConfirm = true;
-    if(msg){ msg.textContent='Ya hay partidos cargados en Octavos. Tocá el botón de nuevo para generar otra tanda igual (se suman, no se reemplazan).'; msg.style.display='block'; }
-    return;
-  }
-  octavosConfirm = false;
-  const a = computeStandings('A'), b = computeStandings('B');
-  const n = Math.min(a.length, b.length);
-  if(n<2){ if(msg){ msg.textContent='Hacen falta equipos en Grupo A y Grupo B para generar los cruces.'; msg.style.display='block'; } return; }
-  const half = Math.floor(n/2);
-  const pairs = [];
-  for(let i=0;i<half;i++) pairs.push([a[i], b[n-1-i]]);
-  for(let i=0;i<half;i++) pairs.push([b[i], a[n-1-i]]);
-  pairs.forEach(([home,away])=>{
-    state.matches.push({id:'m'+Date.now()+Math.random().toString(36).slice(2,7), date:'', home:home.id, away:away.id, hscore:null, ascore:null, phase:'octavos', protest:false});
-  });
-  persist();
-  if(msg){ msg.textContent=`Se generaron ${pairs.length} cruces de Octavos según la posición en cada grupo.`; msg.style.display='block'; }
-  renderBracket(); renderMatches(); renderResultados();
-}
-function advanceWinners(phase){
-  if(!isAdmin) return;
-  const map = ADVANCE_MAP[phase];
-  const msg = document.getElementById('bracket-msg');
-  if(!map) return;
-  const ready = state.matches.filter(m=>m.phase===phase && !m.advanced && m.hscore!==null && m.ascore!==null && (m.hscore!==m.ascore || (m.hpen!==null && m.hpen!==undefined && m.apen!==null && m.apen!==undefined && m.hpen!==m.apen)));
-  if(!ready.length){ if(msg){ msg.textContent='No hay partidos nuevos con resultado (sin empate, o con penales cargados) para avanzar en esta fase.'; msg.style.display='block'; } return; }
-  const winners=[], losers=[];
-  ready.forEach(m=>{
-    let w,l;
-    if(m.hscore!==m.ascore){ w = m.hscore>m.ascore ? m.home : m.away; l = m.hscore>m.ascore ? m.away : m.home; }
-    else { w = m.hpen>m.apen ? m.home : m.away; l = m.hpen>m.apen ? m.away : m.home; }
-    winners.push(w); losers.push(l);
-    m.advanced = true;
-  });
-  for(let i=0;i+1<winners.length;i+=2){
-    state.matches.push({id:'m'+Date.now()+Math.random().toString(36).slice(2,7)+'w', date:'', home:winners[i], away:winners[i+1], hscore:null, ascore:null, phase:map.winner, protest:false});
-  }
-  if(map.loser){
-    for(let i=0;i+1<losers.length;i+=2){
-      state.matches.push({id:'m'+Date.now()+Math.random().toString(36).slice(2,7)+'l', date:'', home:losers[i], away:losers[i+1], hscore:null, ascore:null, phase:map.loser, protest:false});
-    }
-  }
-  persist();
-  if(msg){ msg.textContent=`Se armaron los cruces de "${PHASES[map.winner]}"${map.loser?` y "${PHASES[map.loser]}"`:''} con los resultados cargados.`; msg.style.display='block'; }
-  renderBracket(); renderMatches(); renderResultados();
-}
-function renderBracket(){
-  const el = document.getElementById('bracket-view');
-  if(!el) return;
-  const nav = BRACKET_TABS.map(ph=>`<button class="tab-btn${ph===currentBracketPhase?' active':''}" style="font-size:.78rem" onclick="selectBracketPhase('${ph}')">${bracketTabLabel(ph)}</button>`).join('');
-  let tools = '';
-  if(currentBracketPhase==='octavos') tools = `<button class="btn small admin-only" onclick="generateOctavosFromGroups()">Generar cruces desde la Tabla (1º A vs 8º B, etc.)</button>`;
-  else if(ADVANCE_MAP[currentBracketPhase]) tools = `<button class="btn small admin-only" onclick="advanceWinners('${currentBracketPhase}')">Avanzar ganadores/perdedores a la siguiente fase</button>`;
-  let content = phaseBlock(currentBracketPhase, currentBracketPhase==='octavos' ? 'Octavos de Final (16 equipos)' : null);
-  if(currentBracketPhase==='oro_final') content += phaseBlock('oro_tercer','3ª posición');
-  if(currentBracketPhase==='plata_final') content += phaseBlock('plata_tercer','3ª/4º posición');
-  el.innerHTML = `<nav style="margin:0 0 6px">${nav}</nav>${tools?`<div class="admin-only" style="margin-bottom:10px">${tools}<p class="empty" id="bracket-msg" style="display:none;margin-top:6px"></p></div>`:''}${content}`;
 }
 
 // ---- goleadores ----
@@ -1157,7 +1294,7 @@ function buildWorkbook(){
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(equipos), 'Equipos');
   const jugadores = state.players.map(p=>({Jugador:p.name, Equipo:teamName(p.team), FechaNacimiento:p.birthdate, Documento:p.document}));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(jugadores), 'Jugadores');
-  const partidos = state.matches.map(m=>({Fecha:m.date, Fase:PHASES[m.phase||'grupos'], Local:teamName(m.home), Visitante:teamName(m.away), GolesLocal:m.hscore, GolesVisitante:m.ascore, Protestado:m.protest?'Sí':'No'}));
+  const partidos = state.matches.map(m=>({Fecha:m.date, Hora:m.time, Fase:PHASES[m.phase||'grupos'], Local:teamName(m.home), Visitante:teamName(m.away), GolesLocal:m.hscore, GolesVisitante:m.ascore, PenalesLocal:m.hpen, PenalesVisitante:m.apen, Protestado:m.protest?'Sí':'No'}));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(partidos), 'Partidos');
   const totals = {};
   state.goals.forEach(g=>{ totals[g.player]=(totals[g.player]||0)+g.goals; });
@@ -1209,6 +1346,7 @@ renderReglamento();
 renderWindows();
 renderTransfers();
 renderStandings();
+try{ const lt=localStorage.getItem('liga-last-tab'); const lb=lt && document.querySelector('.tab-btn[data-tab="'+lt+'"]'); if(lb) lb.click(); }catch(e){}
 </script>
 <script>
 if('serviceWorker' in navigator){
