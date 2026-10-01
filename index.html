@@ -495,6 +495,45 @@ function toggleSettingsPanel(){
   el.style.display = el.style.display==='none' ? 'block' : 'none';
   if(el.style.display==='block') renderSettingsPanel();
 }
+  // ---- Gestión del Reglamento PDF ----
+function subirArchivoReglamento() {
+    const fileInput = document.getElementById('inputReglamento');
+    const file = fileInput.files[0];
+
+    if (!file) {
+        alert("Por favor, selecciona un archivo PDF primero.");
+        return;
+    }
+
+    const progressDiv = document.getElementById('upload-progress');
+    const progressSpan = document.getElementById('progress-percent');
+    if (progressDiv) progressDiv.style.display = 'block';
+
+    const storageRef = firebase.storage().ref('reglamentos/' + file.name);
+    const uploadTask = storageRef.put(file);
+
+    uploadTask.on('state_changed', 
+        (snapshot) => {
+            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+            if (progressSpan) progressSpan.innerText = Math.round(progress);
+        }, 
+        (error) => {
+            console.error("Error al subir el archivo:", error);
+            alert("Hubo un error al subir el archivo.");
+            if (progressDiv) progressDiv.style.display = 'none';
+        }, 
+        () => {
+            uploadTask.snapshot.ref.getDownloadURL().then((downloadURL) => {
+                firebase.database().ref('configuracion/reglamentoUrl').set(downloadURL)
+                    .then(() => {
+                        alert("¡Reglamento actualizado correctamente!");
+                        if (progressDiv) progressDiv.style.display = 'none';
+                        fileInput.value = '';
+                    });
+            });
+        }
+    );
+}
 function renderSettingsPanel(){
   const sel = document.getElementById('settings-team-select');
   if(!sel) return;
