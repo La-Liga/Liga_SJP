@@ -976,7 +976,7 @@ function slotCards(ph){
 }
 function generateOctavosFromGroups(){
   if(!isAdmin) return;
-  const a = computeStandings('A'), b = computeStandings('B');
+  const a = computeStandings('A').slice(0, 8), b = computeStandings('B').slice(0, 8);
   const n = Math.min(a.length, b.length);
   if(n<2){ bracketMsg='Hacen falta equipos en Grupo A y Grupo B para generar los cruces.'; renderBracket(); return; }
   if(state.matches.some(m=>PHASE_ORDER.includes(m.phase)) && !octavosConfirm){
