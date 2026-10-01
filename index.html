@@ -183,7 +183,6 @@ sup{font-size:.7em;color:var(--muted);margin-left:2px;}
     </div>
   </div>
 
-
   <!-- PARTIDOS -->
   <div class="panel" id="panel-partidos">
     <div class="card admin-only">
@@ -201,7 +200,6 @@ sup{font-size:.7em;color:var(--muted);margin-left:2px;}
     <div class="card admin-only">
       <button class="btn" onclick="openMatchAdd()">+ Agregar partido</button>
     </div>
-    <p class="lock-note">Solo el administrador puede cargar o editar resultados.</p>
     <div class="card"><h2>Próximos partidos</h2><div id="matches-list"></div></div>
   </div>
 
@@ -943,7 +941,7 @@ function renderResultados(){
 // ---- pestaña Eliminatorias ----
 let currentBracketPhase = (()=>{ try{ return localStorage.getItem('liga-bracket-tab') || 'octavos'; }catch(e){ return 'octavos'; } })();
 const BRACKET_TABS = [
-  {key:'octavos', label:'Octavos', blocks:[['octavos','Octavos de Final (Top 8 Grupo A vs Top 8 Grupo B)']]},
+  {key:'octavos', label:'Octavos', blocks:[['octavos','Octavos de Final']]},
   {key:'oro', label:'🥇 Copa de Oro', blocks:[['oro_cuartos','Cuartos de Oro'],['oro_semi','Semifinal de Oro'],['oro_final','Gran Final Copa de Oro'],['oro_tercer','3ª posición']]},
   {key:'plata', label:'🥈 Copa de Plata', blocks:[['plata_cuartos','Cuartos de Plata'],['plata_semi','Semifinal de Plata'],['plata_final','Gran Final Copa de Plata'],['plata_tercer','3ª posición']]},
   {key:'clas', label:'5to puesto', blocks:[['oro_clas_cuartos','Semifinales 5º-8º'],['oro_5to','Partido por el 5º puesto'],['oro_7mo','Partido por el 7º puesto']]}
@@ -1148,7 +1146,7 @@ function renderCards(){
   });
   const rows = Object.entries(totals).map(([pid,t])=>({pid, name:playerName(pid), team:teamName(playerTeam(pid)), ...t, ...suspensionInfo(pid,t.amarillas,t.rojas)}));
   const el = document.getElementById('cards-list');
-  el.innerHTML = rows.length? `<p class="empty">Regla usada: ${YELLOWS_PER_SUSPENSION} amarillas o 1 roja = 1 fecha de suspensión. El administrador puede editar las fechas pendientes a mano.</p><div class="table-wrap"><table><thead><tr><th>Jugador</th><th>Equipo</th><th class="num">🟨</th><th class="num">🟥</th><th>Estado</th><th class="num">Fechas pend.</th><th></th></tr></thead><tbody>
+  el.innerHTML = rows.length? `<p class="empty">.</p><div class="table-wrap"><table><thead><tr><th>Jugador</th><th>Equipo</th><th class="num">🟨</th><th class="num">🟥</th><th>Estado</th><th class="num">Fechas pend.</th><th></th></tr></thead><tbody>
     ${rows.map(r=>`<tr><td class="team-a">${esc(r.name)}</td><td>${esc(r.team)}</td><td class="num">${r.amarillas||'—'}</td><td class="num">${r.rojas||'—'}</td>
       <td><span class="badge ${r.pending>0?'pending':'ok'}">${r.pending>0?'Suspendido':'Habilitado'}</span></td>
       <td class="num">${isAdmin?`<input type="number" min="0" id="pend-${r.pid}" value="${r.pending}" style="width:54px;margin-bottom:0" onchange="setPendingSuspension('${r.pid}',${r.total})">`:(r.pending||'—')}</td>
