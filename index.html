@@ -938,7 +938,6 @@ function renderMatches(){
         ${when?`<div class="pdate">${esc(when)}${m.protest?' *':''}</div>`:''}
         <div class="pteams"><span class="team-a">${esc(teamName(m.home))}</span><span class="vs-pill">VS</span><span class="team-a">${esc(teamName(m.away))}</span></div>
       </div>
-      <button class="pencil-btn admin-only" onclick="event.stopPropagation();editMatch('${m.id}')">✏️</button>
     </div>`;
     }).join('');
   }).join('') + (list.some(m=>m.protest)?'<p class="empty">* Partido protestado</p>':'');
@@ -1029,6 +1028,44 @@ function generateOctavosFromGroups(){
   });
   persist();
   renderMatchViews();
+}
+  function generateInterserialFromGroups() {
+    if(!isAdmin) return;
+    
+    // Obtener los equipos de los grupos A y B
+    const a = computeStandings('A');
+    const b = computeStandings('B');
+    
+    if(a.length === 0 || b.length === 0) {
+        bracketMsg = 'Hacen falta equipos en Grupo A y Grupo B para generar el interserial.';
+        renderBracket();
+        return;
+    }
+
+    // Mezclar aleatoriamente ambos grupos
+    const aShuffled = [...a].sort(() => Math.random() - 0.5);
+    const bShuffled = [...b].sort(() => Math.random() - 0.5);
+    
+    const max = Math.max(aShuffled.length, bShuffled.length);
+
+    // Crear los enfrentamientos interserial
+    for(let i = 0; i < max; i++) {
+        const teamA = aShuffled[i % aShuffled.length];
+        const teamB = bShuffled[i % bShuffled.length];
+
+        state.matches.push({
+            id: 'm' + Date.now() + Math.random().toString(36).slice(2, 7),
+            date: '',
+            time: '',
+            home: teamA.id || teamA,
+            away: teamB.id || teamB,
+            phase: 'interserial'
+        });
+    }
+
+    bracketMsg = '¡Fecha Interserial generada con éxito!';
+    if (typeof saveState === 'function') saveState();
+    renderBracket();
 }
 let octavosConfirm = false;
 function renderBracket(){
