@@ -87,6 +87,15 @@ sup{font-size:.7em;color:var(--muted);margin-left:2px;}
 .bcard{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:10px;cursor:pointer;}
 .brow{display:flex;justify-content:space-between;gap:10px;padding:3px 0;}
 .bmeta{font-size:.75rem;color:var(--muted);padding:2px 0;}
+.bhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+.bstatus{font-size:.72rem;font-weight:700;color:var(--pending);background:color-mix(in srgb, var(--pending) 18%, transparent);padding:2px 10px;border-radius:20px;}
+.bstatus.done{color:var(--primary);background:color-mix(in srgb, var(--primary) 18%, transparent);}
+.pcard{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:10px;cursor:pointer;}
+.pcard .pinfo{flex:1;min-width:0;}
+.pdate{font-size:.72rem;color:var(--muted);margin-bottom:4px;}
+.pteams{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.vs-pill{background:var(--bg);border:1px solid var(--border);border-radius:20px;padding:3px 12px;font-weight:700;font-size:.72rem;color:var(--primary);flex-shrink:0;}
+.pencil-btn{background:color-mix(in srgb, var(--primary) 18%, transparent);border:none;border-radius:50%;width:36px;height:36px;font-size:1rem;cursor:pointer;flex-shrink:0;line-height:1;}
 </style>
 </head>
 <body>
@@ -348,7 +357,7 @@ function normalizeState(s){
   s = s || {};
   s.teams = s.teams || []; s.matches = s.matches || []; s.players = s.players || [];
   s.goals = s.goals || []; s.windows = s.windows || []; s.transfers = s.transfers || [];
-  s.cards = s.cards || []; s.fines = s.fines || [];
+  s.cards = s.cards || []; s.fines = s.fines || []; s.suspensionsServed = s.suspensionsServed || {};
   s.settings = s.settings || {};
   s.teams.forEach(t=>{ if(t.group===undefined) t.group=''; });
   const OLD_PHASE_MAP = {cuartos:'oro_cuartos', semifinal:'oro_semi', final:'oro_final', oro_clasificacion:'oro_clas_cuartos', oro_clas_semi:'oro_clas_cuartos'};
@@ -891,12 +900,16 @@ function renderMatches(){
   el.innerHTML = PLAY_ORDER.map(ph=>{
     const ms = list.filter(m=>(m.phase||'grupos')===ph).sort((a,b)=> (a.date||'9999').localeCompare(b.date||'9999') || (a.time||'').localeCompare(b.time||''));
     if(!ms.length) return '';
-    return `<p class="fase-h">${PHASES[ph]}</p>` + ms.map(m=>`<div class="mrow" onclick="openMatchDetail('${m.id}')">
-      <div class="mdate">${fmtDate(m.date)}</div>
-      <div class="mteams"><div>${esc(teamName(m.home))}</div><div>${esc(teamName(m.away))}</div></div>
-      <div class="mtime">${esc(m.time||'')}${m.protest?' *':''}</div>
-      <button class="link admin-only" onclick="event.stopPropagation();editMatch('${m.id}')">Editar</button>
-    </div>`).join('');
+    return `<p class="fase-h">${PHASES[ph]}</p>` + ms.map(m=>{
+      const when = [fmtDate(m.date), m.time].filter(Boolean).join(' ');
+      return `<div class="pcard" onclick="openMatchDetail('${m.id}')">
+      <div class="pinfo">
+        ${when?`<div class="pdate">${esc(when)}${m.protest?' *':''}</div>`:''}
+        <div class="pteams"><span class="team-a">${esc(teamName(m.home))}</span><span class="vs-pill">VS</span><span class="team-a">${esc(teamName(m.away))}</span></div>
+      </div>
+      <button class="pencil-btn admin-only" onclick="event.stopPropagation();editMatch('${m.id}')">✏️</button>
+    </div>`;
+    }).join('');
   }).join('') + (list.some(m=>m.protest)?'<p class="empty">* Partido protestado</p>':'');
 }
 
@@ -930,22 +943,19 @@ function renderResultados(){
 // ---- pestaña Eliminatorias ----
 let currentBracketPhase = (()=>{ try{ return localStorage.getItem('liga-bracket-tab') || 'octavos'; }catch(e){ return 'octavos'; } })();
 const BRACKET_TABS = [
-  {key:'octavos', label:'Octavos', blocks:[['octavos','Octavos de final']]},
-  {key:'oro_cuartos', label:'🥇 Cuartos', blocks:[['oro_cuartos','Copa de Oro — Cuartos de final']]},
-  {key:'oro_semi', label:'🥇 Semifinales', blocks:[['oro_semi','Copa de Oro — Semifinales']]},
-  {key:'oro_final', label:'🥇 Final', blocks:[['oro_final','Final de la Copa de Oro'],['oro_tercer','3ª posición']]},
-  {key:'oro_clas', label:'🥇 5º al 8º', blocks:[['oro_clas_cuartos','Semifinales 5º-8º'],['oro_5to','Partido por el 5º puesto'],['oro_7mo','Partido por el 7º puesto']]},
-  {key:'plata_cuartos', label:'🥈 Cuartos', blocks:[['plata_cuartos','Copa de Plata — Cuartos de final']]},
-  {key:'plata_semi', label:'🥈 Semifinales', blocks:[['plata_semi','Copa de Plata — Semifinales']]},
-  {key:'plata_final', label:'🥈 Final', blocks:[['plata_final','Final de la Copa de Plata'],['plata_tercer','3ª posición']]}
+  {key:'octavos', label:'Octavos', blocks:[['octavos','Octavos de Final (Top 8 Grupo A vs Top 8 Grupo B)']]},
+  {key:'oro', label:'🥇 Copa de Oro', blocks:[['oro_cuartos','Cuartos de Oro'],['oro_semi','Semifinal de Oro'],['oro_final','Gran Final Copa de Oro'],['oro_tercer','3ª posición']]},
+  {key:'plata', label:'🥈 Copa de Plata', blocks:[['plata_cuartos','Cuartos de Plata'],['plata_semi','Semifinal de Plata'],['plata_final','Gran Final Copa de Plata'],['plata_tercer','3ª posición']]},
+  {key:'clas', label:'5to puesto', blocks:[['oro_clas_cuartos','Semifinales 5º-8º'],['oro_5to','Partido por el 5º puesto'],['oro_7mo','Partido por el 7º puesto']]}
 ];
 function selectBracketPhase(k){
   currentBracketPhase = k; bracketMsg = '';
   try{ localStorage.setItem('liga-bracket-tab', k); }catch(e){}
   renderBracket();
 }
-function bracketCard(m){
-  if(!m) return `<div class="bcard"><div class="brow"><span class="tbd">Por definir</span></div><div class="brow"><span class="tbd">Por definir</span></div></div>`;
+function bracketCard(m, llave){
+  const head = llave ? `<div class="bhead"><span class="fase-h" style="margin:0">Llave ${llave}</span><span class="bstatus${m&&isPlayed(m)?' done':''}">${m&&isPlayed(m)?'Finalizado':'Pendiente'}</span></div>` : '';
+  if(!m) return `<div class="bcard">${head}<div class="brow"><span class="tbd">Por definir</span></div><div class="brow"><span class="tbd">Por definir</span></div></div>`;
   const played = isPlayed(m), o = matchOutcome(m), w = o ? o.w : null, pens = hasPens(m);
   const row = (id, sc, pen)=>{
     const bold = (id && id===w) ? 'b' : '';
@@ -953,7 +963,7 @@ function bracketCard(m){
   };
   const meta = (m.date||m.time) ? `<div class="bmeta">${fmtDate(m.date)} ${esc(m.time||'')}</div>` : '';
   const tie = (played && m.hscore===m.ascore && !pens) ? '<div class="bmeta">Empate: falta cargar los penales para definir al ganador</div>' : '';
-  return `<div class="bcard" onclick="openMatchDetail('${m.id}')">${meta}${row(m.home,m.hscore,m.hpen)}${row(m.away,m.ascore,m.apen)}${m.protest?'<div class="bmeta">* Partido protestado</div>':''}${tie}<button class="link admin-only" onclick="event.stopPropagation();editMatch('${m.id}')">Editar</button></div>`;
+  return `<div class="bcard" onclick="openMatchDetail('${m.id}')">${head}${meta}${row(m.home,m.hscore,m.hpen)}${row(m.away,m.ascore,m.apen)}${m.protest?'<div class="bmeta">* Partido protestado</div>':''}${tie}<button class="link admin-only" onclick="event.stopPropagation();editMatch('${m.id}')">Editar</button></div>`;
 }
 function slotCards(ph){
   const all = state.matches.filter(m=>m.phase===ph);
@@ -961,7 +971,7 @@ function slotCards(ph){
   for(let i=0;i<(PHASE_SIZE[ph]||0);i++){
     const m = all.find(x=>x.slot===i);
     if(m) shown.add(m.id);
-    html += bracketCard(m);
+    html += bracketCard(m, ph==='octavos' ? i+1 : null);
   }
   all.filter(m=>!shown.has(m.id)).forEach(m=>{ html += bracketCard(m); });
   return html;
@@ -1109,6 +1119,26 @@ function deleteCard(id){
   state.cards = state.cards.filter(x=>x.id!==id);
   persist(); renderCards();
 }
+const YELLOWS_PER_SUSPENSION = 3;
+function suspensionInfo(pid, amarillas, rojas){
+  const total = rojas + Math.floor(amarillas/YELLOWS_PER_SUSPENSION);
+  const adjust = state.suspensionsServed[pid] || 0;
+  const pending = Math.max(0, total + adjust);
+  return {total, pending};
+}
+function serveSuspension(pid){
+  if(!isAdmin) return;
+  state.suspensionsServed[pid] = (state.suspensionsServed[pid]||0) - 1;
+  persist(); renderCards();
+}
+function setPendingSuspension(pid, total){
+  if(!isAdmin) return;
+  const el = document.getElementById('pend-'+pid);
+  const val = parseInt(el.value);
+  if(isNaN(val) || val<0){ el.value = ''; return; }
+  state.suspensionsServed[pid] = val - total;
+  persist(); renderCards();
+}
 function renderCards(){
   fillDisciplinaSelects();
   const totals = {};
@@ -1116,10 +1146,14 @@ function renderCards(){
     if(!totals[c.player]) totals[c.player] = {amarillas:0, rojas:0};
     if(c.type==='Roja') totals[c.player].rojas++; else totals[c.player].amarillas++;
   });
-  const rows = Object.entries(totals).map(([pid,t])=>({name:playerName(pid), team:teamName(playerTeam(pid)), ...t}));
+  const rows = Object.entries(totals).map(([pid,t])=>({pid, name:playerName(pid), team:teamName(playerTeam(pid)), ...t, ...suspensionInfo(pid,t.amarillas,t.rojas)}));
   const el = document.getElementById('cards-list');
-  el.innerHTML = rows.length? `<div class="table-wrap"><table><thead><tr><th>Jugador</th><th>Equipo</th><th class="num">🟨</th><th class="num">🟥</th></tr></thead><tbody>
-    ${rows.map(r=>`<tr><td class="team-a">${esc(r.name)}</td><td>${esc(r.team)}</td><td class="num">${r.amarillas||'—'}</td><td class="num">${r.rojas||'—'}</td></tr>`).join('')}
+  el.innerHTML = rows.length? `<p class="empty">Regla usada: ${YELLOWS_PER_SUSPENSION} amarillas o 1 roja = 1 fecha de suspensión. El administrador puede editar las fechas pendientes a mano.</p><div class="table-wrap"><table><thead><tr><th>Jugador</th><th>Equipo</th><th class="num">🟨</th><th class="num">🟥</th><th>Estado</th><th class="num">Fechas pend.</th><th></th></tr></thead><tbody>
+    ${rows.map(r=>`<tr><td class="team-a">${esc(r.name)}</td><td>${esc(r.team)}</td><td class="num">${r.amarillas||'—'}</td><td class="num">${r.rojas||'—'}</td>
+      <td><span class="badge ${r.pending>0?'pending':'ok'}">${r.pending>0?'Suspendido':'Habilitado'}</span></td>
+      <td class="num">${isAdmin?`<input type="number" min="0" id="pend-${r.pid}" value="${r.pending}" style="width:54px;margin-bottom:0" onchange="setPendingSuspension('${r.pid}',${r.total})">`:(r.pending||'—')}</td>
+      <td class="actions admin-only">${r.pending>0?`<button class="link" onclick="serveSuspension('${r.pid}')">-1 fecha</button>`:''}</td>
+    </tr>`).join('')}
   </tbody></table></div>` : '<p class="empty">Sin tarjetas cargadas.</p>';
 }
 function addFine(){
@@ -1131,10 +1165,10 @@ function addFine(){
   document.getElementById('f-amount').value=''; document.getElementById('f-reason').value='';
   persist(); renderFines();
 }
-function toggleFineStatus(id){
+function markFinePaid(id){
   if(!isAdmin) return;
   const f = state.fines.find(x=>x.id===id); if(!f) return;
-  f.status = f.status==='Pagada' ? 'Pendiente' : 'Pagada';
+  f.status = 'Pagada';
   persist(); renderFines();
 }
 function deleteFine(id){
@@ -1148,7 +1182,7 @@ function renderFines(){
     ${state.fines.map(f=>`<tr>
       <td class="team-a">${esc(playerName(f.player))}</td><td>${esc(f.reason)||'—'}</td><td class="num">$${f.amount}</td>
       <td><span class="badge ${f.status==='Pagada'?'ok':'pending'}">${f.status}</span></td>
-      <td class="actions admin-only"><button class="link" onclick="toggleFineStatus('${f.id}')">${f.status==='Pagada'?'Marcar pendiente':'Marcar pagada'}</button><button class="link danger" onclick="deleteFine('${f.id}')">Borrar</button></td>
+      <td class="actions admin-only">${f.status==='Pagada'?'':`<button class="link" onclick="markFinePaid('${f.id}')">Marcar pagada</button>`}<button class="link danger" onclick="deleteFine('${f.id}')">Borrar</button></td>
     </tr>`).join('')}
   </tbody></table></div>` : '<p class="empty">Sin multas cargadas.</p>';
 }
