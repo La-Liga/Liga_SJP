@@ -1126,13 +1126,22 @@ function generateFixture(){
   }
   if(roundTrip) rounds = rounds.concat(rounds.map(rd=>rd.map(([h,a])=>[a,h])));
   const base = new Date(startVal+'T00:00:00');
-  rounds.forEach((roundMatches, idx)=>{
+ rounds.forEach((roundMatches, idx)=>{
     const d = new Date(base.getTime() + idx*interval*86400000);
     const dateStr = d.toISOString().slice(0,10);
-    roundMatches.forEach(([home,away])=>{
-      state.matches.push({id:'m'+Date.now()+Math.random().toString(36).slice(2,7), date:dateStr, home, away, hscore:null, ascore:null, phase:'grupos', protest:false});
+    const phaseKey = PLAY_ORDER[idx] || 'fecha_1'; // Asigna dinámicamente la fase según el índice
+    roundMatches.forEach(([home, away])=>{
+        state.matches.push({
+            id: 'm' + Date.now() + Math.random().toString(36).slice(2,7), 
+            phase: phaseKey, // Guarda la fase correcta para que el renderizador la reconozca
+            date: dateStr, 
+            home, 
+            away, 
+            hscore: null, 
+            ascore: null
+        });
     });
-  });
+});
   persist();
   document.getElementById('fx-start').value='';
   renderMatches();
