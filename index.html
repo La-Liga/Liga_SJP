@@ -202,7 +202,6 @@ sup{font-size:.7em;color:var(--muted);margin-left:2px;}
       <button class="btn" onclick="openMatchAdd()">+ Agregar partido</button>
     </div>
     <div class="card admin-only">
-    <button class="btn" onclick="generateInterserialFromGroups()">Generar Interserial Aleatorio</button>
 </div>
     <div class="card"><h2>Próximos partidos</h2><div id="matches-list"></div></div>
   </div>
@@ -712,10 +711,27 @@ function rosterHtml(teamId){
         <button class="btn ghost small" id="rp-cancel-${teamId}" style="display:none" onclick="cancelPlayerEditFor('${teamId}')">Cancelar</button>
       </div>
     </div>` : '';
-  return `<p class="empty" style="font-weight:700;color:var(--text);margin-top:12px">Plantel</p>${list}${form}`;
+  // Evaluar si la 5ta fecha está cerrada
+    const partidosF5 = state.matches.filter(m => (m.phase || 'grupos') === 'fecha_5');
+    const fecha5Cerrada = partidosF5.length > 0 && partidosF5.every(m => m.hscore !== null && m.ascore !== null);
+    
+    // Si está cerrada y no es admin, ocultamos el formulario o mostramos aviso
+    const formHabilitado = (fecha5Cerrada && !isLoggedInAsAdmin) 
+        ? `<p style="color: #ff6b6b; font-size: 13px; margin-top: 8px;">Inscripciones cerradas (5ta fecha finalizada).</p>` 
+        : form;
+
+    return `<p class="empty" style="font-weight:700;color:var(--text);margin-top:12px">Plantel</p>${list}${formHabilitado}`;
 }
 function savePlayerFor(teamId){
   if(!canEditTeam(teamId)) return;
+  // --- BLOQUEO TRAS EL CIERRE DE LA 5TA FECHA ---
+    const partidosF5 = state.matches.filter(m => (m.phase || 'grupos') === 'fecha_5');
+    const fecha5Cerrada = partidosF5.length > 0 && partidosF5.every(m => m.hscore !== null && m.ascore !== null);
+    
+    if (fecha5Cerrada && !isLoggedInAsAdmin) {
+        alert("El periodo de fichaje y registro de jugadores ha finalizado tras cerrarse la 5ta fecha.");
+        return;
+    }
   const nameEl = document.getElementById('rp-name-'+teamId);
   const name = nameEl.value.trim();
   if(!name) return;
@@ -747,6 +763,14 @@ function cancelPlayerEditFor(teamId){
 function editPlayerInline(id){
   const p = state.players.find(x=>x.id===id); if(!p) return;
   if(!canEditTeam(p.team)) return;
+  // --- BLOQUEO DE EDICIÓN TRAS EL CIERRE DE LA 5TA FECHA ---
+    const partidosF5 = state.matches.filter(m => (m.phase || 'grupos') === 'fecha_5');
+    const fecha5Cerrada = partidosF5.length > 0 && partidosF5.every(m => m.hscore !== null && m.ascore !== null);
+    
+    if (fecha5Cerrada && !isLoggedInAsAdmin) {
+        alert("El periodo de modificación de jugadores ha finalizado tras cerrarse la 5ta fecha.");
+        return;
+    }
   editingPlayerId = id; dupConfirmed = false;
   document.getElementById('rp-name-'+p.team).value = p.name;
   document.getElementById('rp-birthdate-'+p.team).value = p.birthdate||'';
@@ -950,7 +974,10 @@ function renderMatches(){
     const ms = list.filter(m=>(m.phase||'grupos')===ph).sort((a,b)=> (a.date||'9999').localeCompare(b.date||'9999') || (a.time||'').localeCompare(b.time||''));
     if(!ms.length) return '';
    const nombreFecha = (ph === 'interserial') ? 'Fecha Interserial' : `Fecha ${index + 1}`;
-return `<p class="fase-h">${nombreFecha}</p>` + ms.map(m => {
+return `<div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px;">
+    <p class="fase-h" style="margin: 0;">${nombreFecha}</p>
+    <button class="btn small admin-only" onclick="reprogramarFase('${ph}')" title="Mover partidos de esta fecha 7 días adelante">🌧️ Mover Fecha</button>
+</div>` + ms.map(m => {
       const when = [fmtDate(m.date), m.time].filter(Boolean).join(' ');
       return `<div class="pcard" onclick="openMatchDetail('${m.id}')">
       <div class="pinfo">
@@ -1040,11 +1067,27 @@ function generateOctavosFromGroups(){
   const half = Math.floor(n/2);
   const order = half===4 ? [0,3,1,2] : [...Array(half).keys()];
   const pairs = [];
-  order.forEach(i=>pairs.push([a[i], b[n-1-i]]));
-  order.forEach(i=>pairs.push([b[i], a[n-1-i]]));
-  pairs.forEach(([h,aw],slot)=>{
-    state.matches.push({id:'m'+Date.now()+Math.random().toString(36).slice(2,7), date:'', time:'', home:h.id, away:aw.id, hscore:null, ascore:null, hpen:null, apen:null, phase:'octavos', slot, protest:false});
-  });
+    order.forEach(i => {
+        const local = a[i];
+        const visitante = b[n - 1 - i];
+        if (local && visitante) {
+            // Partido de Ida
+            pairs.push({ home: local, away: visitante, phase: '8vos_ida' });
+            // Partido de Vuelta (invierte local y visitante)
+            pairs.push({ home: visitante, away: local, phase: '8vos_vuelta' });
+        }
+    });
+
+    pairs.forEach((p, slot) => {
+        state.matches.push({
+            id: 'm_' + p.phase + '_' + slot + '_' + Date.now(),
+            phase: p.phase,
+            home: p.home.teamId || p.home,
+            away: p.away.teamId || p.away,
+            hscore: null,
+            ascore: null
+        });
+    });
   persist();
   renderMatchViews();
 }
@@ -1475,6 +1518,23 @@ renderReglamento();
 renderWindows();
 renderTransfers();
 renderStandings();
+  function reprogramarFecha(nombreJornada, diasASumar) {
+    if (!confirm(`¿Estás seguro de mover todos los partidos de la ${nombreJornada} ${diasASumar} días adelante?`)) {
+        return;
+    }
+
+    state.matches.forEach(m => {
+        if ((m.phase || 'grupos') === nombreJornada && m.date) {
+            let fechaOriginal = new Date(m.date + 'T00:00:00');
+            fechaOriginal.setDate(fechaOriginal.getDate() + diasASumar);
+            m.date = fechaOriginal.toISOString().slice(0, 10);
+        }
+    });
+
+    persist();
+    renderMatches();
+    alert("¡Fecha reprogramada con éxito!");
+}
 try{ const lt=localStorage.getItem('liga-last-tab'); const lb=lt && document.querySelector('.tab-btn[data-tab="'+lt+'"]'); if(lb) lb.click(); }catch(e){}
 </script>
 <script>
