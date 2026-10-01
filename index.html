@@ -995,7 +995,6 @@ function generateOctavosFromGroups(){
     state.matches.push({id:'m'+Date.now()+Math.random().toString(36).slice(2,7), date:'', time:'', home:h.id, away:aw.id, hscore:null, ascore:null, hpen:null, apen:null, phase:'octavos', slot, protest:false});
   });
   persist();
-  bracketMsg = 'Se generaron '+pairs.length+' cruces de Octavos según la posición en cada grupo.';
   renderMatchViews();
 }
 let octavosConfirm = false;
@@ -1005,7 +1004,7 @@ function renderBracket(){
   const tab = BRACKET_TABS.find(t=>t.key===currentBracketPhase) || BRACKET_TABS[0];
   const nav = BRACKET_TABS.map(t=>`<button class="tab-btn${t.key===tab.key?' active':''}" style="font-size:.78rem" onclick="selectBracketPhase('${t.key}')">${t.label}</button>`).join('');
   const tools = tab.key==='octavos'
-    ? `<div class="admin-only" style="margin-bottom:10px"><button class="btn small" onclick="generateOctavosFromGroups()">Generar cruces desde la Tabla (1º A vs 8º B, etc.)</button></div>` : '';
+    ? `<div class="admin-only" style="margin-bottom:10px"><button class="btn small" onclick="generateOctavosFromGroups()">Generar cruces desde la Tabla</button></div>` : '';
   const msg = bracketMsg ? `<p class="empty">${esc(bracketMsg)}</p>` : '';
   const blocks = tab.blocks.map(([ph,title])=>`<p class="fase-h">${title}</p>${slotCards(ph)}`).join('');
   el.innerHTML = `<nav style="margin:0 0 6px">${nav}</nav>${tools}${msg}${blocks}`;
