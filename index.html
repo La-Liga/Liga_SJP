@@ -934,7 +934,8 @@ function renderMatches(){
   el.innerHTML = PLAY_ORDER.map((ph, index)=>{
     const ms = list.filter(m=>(m.phase||'grupos')===ph).sort((a,b)=> (a.date||'9999').localeCompare(b.date||'9999') || (a.time||'').localeCompare(b.time||''));
     if(!ms.length) return '';
-    return `<p class="fase-h">Fecha ${index + 1}</p>` + ms.map(m=>{
+   const nombreFecha = (ph === 'interserial') ? 'Fecha Interserial' : `Fecha ${index + 1}`;
+return `<p class="fase-h">${nombreFecha}</p>` + ms.map(m => {
       const when = [fmtDate(m.date), m.time].filter(Boolean).join(' ');
       return `<div class="pcard" onclick="openMatchDetail('${m.id}')">
       <div class="pinfo">
