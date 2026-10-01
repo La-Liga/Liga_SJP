@@ -898,7 +898,20 @@ function renderMatchPanel(id){
     ${goals.length?`<p class="empty" style="margin-top:8px">${goals.map(g=>`⚽ ${esc(playerName(g.player))} (${g.goals}) <button class="link danger" onclick="deleteGoal('${g.id}');renderMatchPanel('${id}')">x</button>`).join(' &nbsp; ')}</p>`:''}
     ${cards.length?`<p class="empty">${cards.map(c=>`${c.type==='Roja'?'🟥':'🟨'} ${esc(playerName(c.player))} <button class="link danger" onclick="deleteCard('${c.id}');renderMatchPanel('${id}')">x</button>`).join(' &nbsp; ')}</p>`:''}`;
 }
-
+function deleteAllMatches() {
+    if (confirm("¿Estás seguro de que deseas eliminar todo el fixture? Esta acción borrará todos los partidos creados.")) {
+        firebase.database().ref('matches').remove()
+            .then(() => {
+                alert("¡Fixture borrado con éxito!");
+                state.matches = [];
+                renderMatches();
+            })
+            .catch((error) => {
+                console.error("Error al borrar el fixture:", error);
+                alert("Hubo un error al intentar borrar el fixture.");
+            });
+    }
+}
 // ---- detalle de partido (para todos; no cambia de pestaña) ----
 function openMatchDetail(id){ detailId=id; renderDetail(); openModal('detail-modal'); }
 function closeDetail(){ detailId=null; closeModal('detail-modal'); }
