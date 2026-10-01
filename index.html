@@ -200,6 +200,9 @@ sup{font-size:.7em;color:var(--muted);margin-left:2px;}
     <div class="card admin-only">
       <button class="btn" onclick="openMatchAdd()">+ Agregar partido</button>
     </div>
+    <div class="card admin-only">
+    <button class="btn" onclick="generateInterserialFromGroups()">Generar Interserial Aleatorio</button>
+</div>
     <div class="card"><h2>Próximos partidos</h2><div id="matches-list"></div></div>
   </div>
 
@@ -928,10 +931,10 @@ function renderMatches(){
   const el = document.getElementById('matches-list');
   const list = state.matches.filter(m=>!isPlayed(m) && m.home && m.away);
   if(!list.length){ el.innerHTML='<p class="empty">No hay partidos pendientes.</p>'; return; }
-  el.innerHTML = PLAY_ORDER.map(ph=>{
+  el.innerHTML = PLAY_ORDER.map((ph, index)=>{
     const ms = list.filter(m=>(m.phase||'grupos')===ph).sort((a,b)=> (a.date||'9999').localeCompare(b.date||'9999') || (a.time||'').localeCompare(b.time||''));
     if(!ms.length) return '';
-    return `<p class="fase-h">${PHASES[ph]}</p>` + ms.map(m=>{
+    return `<p class="fase-h">Fecha ${index + 1}</p>` + ms.map(m=>{
       const when = [fmtDate(m.date), m.time].filter(Boolean).join(' ');
       return `<div class="pcard" onclick="openMatchDetail('${m.id}')">
       <div class="pinfo">
