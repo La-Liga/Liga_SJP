@@ -34,7 +34,7 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,B
 .wrap{max-width:720px;margin:0 auto;padding:20px 16px 48px;}
 h1{font-size:1.4rem;font-weight:700;margin:4px 0 2px;}
 .sub{color:var(--muted);font-size:.85rem;margin:0 0 14px;}
-nav{display:flex;gap:6px;border-bottom:1px solid var(--border);margin-bottom:18px;overflow-x:auto;}
+nav{dis:flex;gap:6px;border-bottom:1px solid var(--border);margin-bottom:18px;overflow-x:auto;}
 nav button{background:none;border:none;color:var(--muted);font-size:.88rem;font-weight:600;padding:10px 4px;margin-right:12px;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;}
 nav button.active{color:var(--primary);border-bottom-color:var(--primary);}
 .panel{display:none;}
@@ -391,7 +391,8 @@ const PHASES = {
 const ORO_ORDER = ['oro_cuartos','oro_semi','oro_final','oro_tercer','oro_clas_cuartos','oro_5to','oro_7mo'];
 const PLATA_ORDER = ['plata_cuartos','plata_semi','plata_final','plata_tercer'];
 const PHASE_ORDER = ['octavos', ...ORO_ORDER, ...PLATA_ORDER];
-const PLAY_ORDER = ['grupos','octavos','oro_cuartos','plata_cuartos','oro_semi','oro_clas_cuartos','plata_semi','oro_final','oro_tercer','oro_5to','oro_7mo','plata_final','plata_tercer'];
+const PLAY_ORDER = ['fecha_1', 'fecha_2', 'fecha_3', 'fecha_4', 'fecha_5', 'fecha_6', 'fecha_7', 'fecha_8', 'fecha_9', 'fecha_10', 'fecha_11', 'interserial',
+                    'octavos','oro_cuartos','plata_cuartos','oro_semi','oro_clas_cuartos','plata_semi','oro_final','oro_tercer','oro_5to','oro_7mo','plata_final','plata_tercer'];
 // De dónde sale cada cruce: el local es el ganador/perdedor del partido 2i y el visitante el del 2i+1 de la fase anterior
 const FEEDS = {
   oro_cuartos:      {from:'octavos', take:'winner'},
