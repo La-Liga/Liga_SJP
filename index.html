@@ -505,29 +505,23 @@ function subirArchivoReglamento() {
         return;
     }
 
-    const progressDiv = document.getElementById('upload-progress');
-    const progressSpan = document.getElementById('progress-percent');
-    if (progressDiv) progressDiv.style.display = 'block';
-
     const storageRef = firebase.storage().ref('reglamentos/' + file.name);
     const uploadTask = storageRef.put(file);
 
     uploadTask.on('state_changed', 
         (snapshot) => {
             const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-            if (progressSpan) progressSpan.innerText = Math.round(progress);
+            console.log('Subida: ' + Math.round(progress) + '%');
         }, 
         (error) => {
-            console.error("Error al subir el archivo:", error);
+            console.error("Error al subir a Storage:", error);
             alert("Hubo un error al subir el archivo.");
-            if (progressDiv) progressDiv.style.display = 'none';
         }, 
         () => {
             uploadTask.snapshot.ref.getDownloadURL().then((downloadURL) => {
-                firebase.database().ref('configuracion/reglamentoUrl').set(downloadURL)
+                firebase.database().ref('reglamentos/dataUrl').set(downloadURL)
                     .then(() => {
-                        alert("¡Reglamento actualizado correctamente!");
-                        if (progressDiv) progressDiv.style.display = 'none';
+                        alert("¡Reglamento subido y actualizado con éxito!");
                         fileInput.value = '';
                     });
             });
