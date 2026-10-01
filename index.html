@@ -496,8 +496,8 @@ function toggleSettingsPanel(){
   if(el.style.display==='block') renderSettingsPanel();
 }
   // ---- Gestión del Reglamento PDF ----
-function subirArchivoReglamento() {
-    const fileInput = document.getElementById('inputReglamento');
+function uploadReglamento() {
+    const fileInput = document.getElementById('r-file');
     const file = fileInput.files[0];
 
     if (!file) {
