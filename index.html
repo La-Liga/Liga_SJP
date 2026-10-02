@@ -908,6 +908,12 @@ function deleteMatchFromModal(){
   if(!delConfirm){ delConfirm=true; btn.textContent='¿Seguro? Tocá de nuevo para borrar'; return; }
   const id = editingMatchId; cancelMatchEdit(); deleteMatch(id);
 }
+  function reprogramarFase() {
+    if(!isAdmin) return;
+    // Lógica para reprogramar las fechas de las fases
+    bracketMsg = 'Modo de reprogramación de fecha activo.';
+    if(typeof renderBracket === 'function') renderBracket();
+}
 function toggleFixtureForm(){
   const el = document.getElementById('fixture-form-fields');
   if(el) el.style.display = el.style.display==='none' ? 'block' : 'none';
