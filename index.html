@@ -208,7 +208,7 @@ sup{font-size:.7em;color:var(--muted);margin-left:2px;}
         <div class="grid">
           <div><label>Fecha de la 1ª fecha</label><input type="date" id="fx-start"></div>
           <div><label>Días entre fechas</label><input type="number" min="1" value="7" id="fx-interval"></div>
-          <div class="full"><label><input type="checkbox" id="fx-roundtrip"> Ida y vuelta</label></div>
+          <div class="full"><p class="empty" style="margin:0">El fixture se genera automáticamente con 11 fechas de grupos + 1 fecha Interserial. Son 12 partidos por fecha.</p></div>
         </div>
         <button class="btn" onclick="generateFixture()">Generar fixture</button>
         <p class="empty" id="fx-msg" style="display:none"></p>
@@ -936,12 +936,55 @@ function deleteMatchFromModal(){
   if(!delConfirm){ delConfirm=true; btn.textContent='¿Seguro? Tocá de nuevo para borrar'; return; }
   const id = editingMatchId; cancelMatchEdit(); deleteMatch(id);
 }
-  function updatePhaseDate(phase, value){
-  if(!isAdmin) return;
-  const matches = state.matches.filter(m=>(m.phase||'grupos')===phase);
-  if(!matches.length) return;
-  if(!confirm(`¿Cambiar la fecha de los ${matches.length} partidos de esta jornada?`)) return;
-  matches.forEach(m=>{ m.date = value || ''; });
+function updatePhaseDate(phase, value){
+  if(!isAdmin || !value) return;
+  const order = ['fecha_1','fecha_2','fecha_3','fecha_4','fecha_5','fecha_6','fecha_7','fecha_8','fecha_9','fecha_10','fecha_11','interserial'];
+  const idx = order.indexOf(phase);
+  if(idx<0) return;
+  const phaseMatches = ph => state.matches.filter(m=>(m.phase||'grupos')===ph);
+  const source = phaseMatches(phase);
+  if(!source.length) return;
+
+  const currentDates = order.map(ph=>{
+    const ms=phaseMatches(ph);
+    return ms.length ? (ms[0].date||'') : '';
+  });
+  const oldDate = currentDates[idx];
+  if(value===oldDate) return;
+
+  // Determinar en qué posición del calendario se inserta la jornada elegida.
+  let targetIndex = currentDates.findIndex(d=>d===value);
+  if(targetIndex<0){
+    // Si se eligió una fecha nueva, usamos la posición cronológica más cercana.
+    targetIndex = currentDates.filter(Boolean).findIndex(d=>d>value);
+    if(targetIndex<0) targetIndex=order.length-1;
+  }
+
+  const newOrder=order.slice();
+  newOrder.splice(idx,1);
+  const insertionIndex = targetIndex>idx ? targetIndex-1 : targetIndex;
+  newOrder.splice(insertionIndex,0,phase);
+
+  const dates = currentDates.slice();
+  const intervalDates = currentDates.filter(Boolean);
+  let interval=7;
+  if(intervalDates.length>1){
+    const ds=intervalDates.map(d=>new Date(d+'T00:00:00')).sort((a,b)=>a-b);
+    const diffs=[];
+    for(let i=1;i<ds.length;i++){ const x=Math.round((ds[i]-ds[i-1])/86400000); if(x>0) diffs.push(x); }
+    if(diffs.length) interval=Math.min(...diffs);
+  }
+  const startDate = new Date(value+'T00:00:00');
+  const assigned={};
+  newOrder.forEach((ph,i)=>{
+    const d=new Date(startDate.getTime()+(i-(insertionIndex))*interval*86400000);
+    assigned[ph]=d.toISOString().slice(0,10);
+  });
+
+  const destino = newOrder.indexOf(phase)+1;
+  if(!confirm(`¿Mover ${phase==='interserial'?'la fecha Interserial':phase.replace('fecha_','la Fecha ')} a ${fmtDate(value)}? Las jornadas que queden en medio se desplazarán una posición.`)) return;
+
+  order.forEach(ph=>phaseMatches(ph).forEach(m=>{ m.date=assigned[ph] || m.date; }));
   persist();
   renderMatchViews();
 }
@@ -1209,45 +1252,73 @@ function generateFixture(){
   if(!isAdmin) return;
   const msg = document.getElementById('fx-msg');
   msg.style.display='none';
-  if(state.teams.length<2){ msg.textContent='Necesitás al menos 2 equipos.'; msg.style.display='block'; return; }
+
+  const grupoA = state.teams.filter(t=>t.group==='A');
+  const grupoB = state.teams.filter(t=>t.group==='B');
+  if(grupoA.length!==12 || grupoB.length!==12){
+    msg.textContent=`El fixture necesita exactamente 12 equipos en Grupo A y 12 en Grupo B. Actualmente: A=${grupoA.length}, B=${grupoB.length}.`;
+    msg.style.display='block';
+    return;
+  }
+
   const startVal = document.getElementById('fx-start').value;
   if(!startVal){ msg.textContent='Elegí la fecha de la primera fecha.'; msg.style.display='block'; return; }
-  const interval = parseInt(document.getElementById('fx-interval').value)||7;
-  const roundTrip = document.getElementById('fx-roundtrip').checked;
-  let arr = state.teams.map(t=>t.id);
-  if(arr.length%2!==0) arr.push(null);
-  const n = arr.length;
-  let rounds = [];
-  for(let r=0;r<n-1;r++){
-    const roundMatches=[];
-    for(let i=0;i<n/2;i++){
-      const home=arr[i], away=arr[n-1-i];
-      if(home!==null && away!==null) roundMatches.push(r%2===0?[home,away]:[away,home]);
+  const interval = Math.max(1, parseInt(document.getElementById('fx-interval').value)||7);
+
+  if(state.matches.length && !confirm('¿Regenerar el fixture? Se eliminarán los partidos actuales del fixture de grupos/interserial y se crearán las 11 fechas de grupos + 1 fecha interserial. Las eliminatorias se conservarán.')) return;
+
+  // Conservamos eliminatorias y eliminamos solamente el fixture de fase de grupos/interserial.
+  state.matches = state.matches.filter(m=>{
+    const ph = m.phase || 'grupos';
+    return !(ph==='grupos' || /^fecha_([1-9]|10|11)$/.test(ph) || ph==='interserial');
+  });
+
+  function makeRoundRobin(teams){
+    const arr = teams.map(t=>t.id);
+    const rounds=[];
+    for(let r=0;r<11;r++){
+      const games=[];
+      for(let i=0;i<6;i++){
+        const a=arr[i], b=arr[11-i];
+        games.push(r%2===0?[a,b]:[b,a]);
+      }
+      rounds.push(games);
+      arr.splice(1,0,arr.pop());
     }
-    rounds.push(roundMatches);
-    arr.splice(1,0, arr.pop());
+    return rounds;
   }
-  if(roundTrip) rounds = rounds.concat(rounds.map(rd=>rd.map(([h,a])=>[a,h])));
+
+  const roundsA = makeRoundRobin(grupoA);
+  const roundsB = makeRoundRobin(grupoB);
   const base = new Date(startVal+'T00:00:00');
- rounds.forEach((roundMatches, idx)=>{
+  const dateFor = idx => {
     const d = new Date(base.getTime() + idx*interval*86400000);
-    const dateStr = d.toISOString().slice(0,10);
-    const phaseKey = PLAY_ORDER[idx] || 'fecha_1'; // Asigna dinámicamente la fase según el índice
-    roundMatches.forEach(([home, away])=>{
-        state.matches.push({
-            id: 'm' + Date.now() + Math.random().toString(36).slice(2,7), 
-            phase: phaseKey, // Guarda la fase correcta para que el renderizador la reconozca
-            date: dateStr, 
-            home, 
-            away, 
-            hscore: null, 
-            ascore: null
-        });
-    });
-});
+    return d.toISOString().slice(0,10);
+  };
+  const newMatch=(phase,date,home,away)=>({
+    id:'m'+Date.now()+Math.random().toString(36).slice(2,8),
+    phase,date,time:'',home,away,hscore:null,ascore:null,hpen:null,apen:null,protest:false
+  });
+
+  // 11 fechas de grupos: 6 partidos A + 6 partidos B = 12 por fecha.
+  for(let r=0;r<11;r++){
+    const phase=`fecha_${r+1}`;
+    const date=dateFor(r);
+    [...roundsA[r], ...roundsB[r]].forEach(([home,away])=>state.matches.push(newMatch(phase,date,home,away)));
+  }
+
+  // Fecha 12: Interserial. Cada equipo juega una sola vez contra un equipo del otro grupo.
+  const interDate=dateFor(11);
+  for(let i=0;i<12;i++){
+    state.matches.push(newMatch('interserial',interDate,grupoA[i].id,grupoB[i].id));
+  }
+
+  // Ya no se generan partidos directos de Copa desde el fixture.
   persist();
   document.getElementById('fx-start').value='';
-  renderMatches();
+  renderMatchViews();
+  msg.textContent='¡Fixture generado: 11 fechas de grupos + 1 Interserial (12 partidos por fecha)!';
+  msg.style.display='block';
 }
 function addQuickGoal(matchId){
   if(!isAdmin) return;
