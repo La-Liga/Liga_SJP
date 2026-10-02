@@ -16,6 +16,12 @@
   --muted:#6B7268; --primary:#2F7A42; --primary-text:#FFFFFF;
   --danger:#B3452C; --pending:#B4791F; --radius:10px;
 }
+  /* Contenedor de pestañas con desplazamiento horizontal elegante */
+    .tabs-container, .tabs { /* Reemplaza o adapta con la clase exacta que envuelve tus pestañas */
+        overflow-x: auto;
+        white-space: nowrap;
+        scrollbar-width: thin;
+    }
 html{scroll-padding-top:env(safe-area-inset-top,0px);}
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
