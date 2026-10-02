@@ -16,12 +16,12 @@
   --muted:#6B7268; --primary:#2F7A42; --primary-text:#FFFFFF;
   --danger:#B3452C; --pending:#B4791F; --radius:10px;
 }
-  /* Contenedor de pestañas con desplazamiento horizontal elegante */
-    .tabs-container, .tabs { /* Reemplaza o adapta con la clase exacta que envuelve tus pestañas */
-        overflow-x: auto;
-        white-space: nowrap;
-        scrollbar-width: thin;
-    }
+/* Forzar contenedor de pestañas con scroll horizontal */
+div[style*="display: flex"], .menu-tabs, nav, .nav-tabs {
+    overflow-x: auto !important;
+    white-space: nowrap !important;
+    -webkit-overflow-scrolling: touch;
+}
 html{scroll-padding-top:env(safe-area-inset-top,0px);}
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
@@ -206,8 +206,6 @@ sup{font-size:.7em;color:var(--muted);margin-left:2px;}
     <div class="card admin-only">
       <button class="btn" onclick="openMatchAdd()">+ Agregar partido</button>
     </div>
-    <div class="card admin-only">
-</div>
     <div class="card"><h2>Próximos partidos</h2><div id="matches-list"></div></div>
   </div>
 
