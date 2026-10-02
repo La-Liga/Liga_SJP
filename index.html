@@ -102,6 +102,14 @@ sup{font-size:.7em;color:var(--muted);margin-left:2px;}
 .pteams{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
 .vs-pill{background:var(--bg);border:1px solid var(--border);border-radius:20px;padding:3px 12px;font-weight:700;font-size:.72rem;color:var(--primary);flex-shrink:0;}
 .pencil-btn{background:color-mix(in srgb, var(--primary) 18%, transparent);border:none;border-radius:50%;width:36px;height:36px;font-size:1rem;cursor:pointer;flex-shrink:0;line-height:1;}
+
+.tiecard{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:10px;}
+.tiehead{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;}
+.tiegrid{display:grid;grid-template-columns:minmax(0,1fr) 58px 58px 58px;gap:6px;align-items:center;font-size:.82rem;}
+.tiegrid>div{padding:5px 4px;border-bottom:1px solid var(--border);}
+.tiegrid .th{font-size:.68rem;color:var(--muted);text-align:center;font-weight:700;text-transform:uppercase;}
+.tiegrid .score{text-align:center;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:700;}
+.tie-actions{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;}
 </style>
 </head>
 <body>
@@ -814,8 +822,19 @@ function nextSlot(ph, exceptId){
   const used = new Set(state.matches.filter(x=>x.phase===ph && x.id!==exceptId && x.slot!=null).map(x=>x.slot));
   let k=0; while(used.has(k)) k++; return k;
 }
+function tieOutcome(ph, slot){
+  const legs = state.matches.filter(m=>m.phase===ph && m.slot===slot).sort((a,b)=>(a.leg||1)-(b.leg||1));
+  if(legs.length < 2 || !legs[0].home || !legs[0].away || !isPlayed(legs[0]) || !isPlayed(legs[1])) return null;
+  const a = legs[0].home, b = legs[0].away;
+  let aGoals = (legs[0].home===a ? legs[0].hscore : legs[0].ascore) + (legs[1].home===a ? legs[1].hscore : legs[1].ascore);
+  let bGoals = (legs[0].home===b ? legs[0].hscore : legs[0].ascore) + (legs[1].home===b ? legs[1].hscore : legs[1].ascore);
+  if(aGoals>bGoals) return {w:a,l:b};
+  if(bGoals>aGoals) return {w:b,l:a};
+  const dec = matchOutcome(legs[1]);
+  return dec ? dec : null;
+}
 function feedTeam(f, i){
-  const o = matchOutcome(findSlot(f.from, i));
+  const o = f.from==='octavos' ? tieOutcome('octavos', i) : matchOutcome(findSlot(f.from, i));
   if(!o) return null;
   return f.take==='winner' ? o.w : o.l;
 }
@@ -908,11 +927,25 @@ function deleteMatchFromModal(){
   if(!delConfirm){ delConfirm=true; btn.textContent='¿Seguro? Tocá de nuevo para borrar'; return; }
   const id = editingMatchId; cancelMatchEdit(); deleteMatch(id);
 }
-  function reprogramarFase() {
-    if(!isAdmin) return;
-    // Lógica para reprogramar las fechas de las fases
-    bracketMsg = 'Modo de reprogramación de fecha activo.';
-    if(typeof renderBracket === 'function') renderBracket();
+  function reprogramarFase(ph) {
+  if(!isAdmin) return;
+  const partidos = state.matches.filter(m => (m.phase || 'grupos') === ph && m.date);
+  if(!partidos.length){
+    alert('Esta fecha no tiene partidos con fecha cargada.');
+    return;
+  }
+  const nombre = ph === 'interserial' ? 'Fecha Interserial' : (ph.startsWith('fecha_') ? 'Fecha ' + ph.split('_')[1] : (PHASES[ph] || ph));
+  if(!confirm(`¿Mover todos los partidos de ${nombre} 7 días adelante?`)) return;
+  partidos.forEach(m => {
+    const p = String(m.date).split('-').map(Number);
+    if(p.length !== 3 || p.some(Number.isNaN)) return;
+    const d = new Date(p[0], p[1]-1, p[2]);
+    d.setDate(d.getDate()+7);
+    m.date = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  });
+  persist();
+  renderMatchViews();
+  alert(`¡${nombre} fue movida 7 días adelante!`);
 }
 function toggleFixtureForm(){
   const el = document.getElementById('fixture-form-fields');
@@ -985,7 +1018,7 @@ function renderMatches(){
    const nombreFecha = (ph === 'interserial') ? 'Fecha Interserial' : `Fecha ${index + 1}`;
 return `<div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px;">
     <p class="fase-h" style="margin: 0;">${nombreFecha}</p>
-    <button class="btn small admin-only" onclick="reprogramarFecha('${ph}')" title="Mover partidos de esta fecha 7 días adelante">🌧️ Mover Fecha</button>
+    <button class="btn small admin-only" onclick="reprogramarFase('${ph}')" title="Mover partidos de esta fecha 7 días adelante">🌧️ Mover Fecha</button>
 </div>` + ms.map(m => {
       const when = [fmtDate(m.date), m.time].filter(Boolean).join(' ');
       return `<div class="pcard" onclick="openMatchDetail('${m.id}')">
@@ -997,30 +1030,6 @@ return `<div style="display: flex; justify-content: space-between; align-items: 
     }).join('');
   }).join('') + (list.some(m=>m.protest)?'<p class="empty">* Partido protestado</p>':'');
 }
-function reprogramarfase(ph) {
-    if (!isAdmin) {
-        alert("Acción solo permitida para administradores.");
-        return;
-    }
-    
-    if (!confirm(`¿Estás seguro de reprogramar todos los partidos de la fase "${ph}" sumando 7 días?`)) {
-        return;
-    }
-
-    state.matches.forEach(m => {
-        if ((m.phase || 'grupos') === ph && m.date) {
-            let d = new Date(m.date + 'T00:00:00');
-            d.setDate(d.getDate() + 7);
-            m.date = d.toISOString().split('T')[0];
-        }
-    });
-
-    if (typeof persist === 'function') persist();
-    if (typeof renderMatches === 'function') renderMatches();
-    
-    alert("¡Partidos reprogramados con éxito!");
-}
-  
 // ---- pestaña Resultados: agrupados por fase, como en la app de referencia ----
 function resultRow(m){
   const o = matchOutcome(m), w = o ? o.w : null, pens = hasPens(m);
@@ -1073,89 +1082,76 @@ function bracketCard(m, llave){
   const tie = (played && m.hscore===m.ascore && !pens) ? '<div class="bmeta">Empate: falta cargar los penales para definir al ganador</div>' : '';
   return `<div class="bcard" onclick="openMatchDetail('${m.id}')">${head}${meta}${row(m.home,m.hscore,m.hpen)}${row(m.away,m.ascore,m.apen)}${m.protest?'<div class="bmeta">* Partido protestado</div>':''}${tie}<button class="link admin-only" onclick="event.stopPropagation();editMatch('${m.id}')">Editar</button></div>`;
 }
+function octavosTieCard(slot){
+  const legs = state.matches.filter(m=>m.phase==='octavos' && m.slot===slot).sort((a,b)=>(a.leg||1)-(b.leg||1));
+  const ida = legs.find(m=>m.leg===1) || null;
+  const vuelta = legs.find(m=>m.leg===2) || null;
+  const homeTeam = ida?.home || vuelta?.away || null;
+  const awayTeam = ida?.away || vuelta?.home || null;
+  const idaHome = ida && isPlayed(ida) ? ida.hscore : '';
+  const idaAway = ida && isPlayed(ida) ? ida.ascore : '';
+  const vueltaHome = vuelta && isPlayed(vuelta) ? vuelta.ascore : '';
+  const vueltaAway = vuelta && isPlayed(vuelta) ? vuelta.hscore : '';
+  const globalHome = (ida && isPlayed(ida) ? (ida.home===homeTeam?ida.hscore:ida.ascore) : 0) + (vuelta && isPlayed(vuelta) ? (vuelta.home===homeTeam?vuelta.hscore:vuelta.ascore) : 0);
+  const globalAway = (ida && isPlayed(ida) ? (ida.home===awayTeam?ida.hscore:ida.ascore) : 0) + (vuelta && isPlayed(vuelta) ? (vuelta.home===awayTeam?vuelta.hscore:vuelta.ascore) : 0);
+  const complete = !!(ida && vuelta && isPlayed(ida) && isPlayed(vuelta));
+  const outcome = complete ? tieOutcome('octavos',slot) : null;
+  const winner = outcome?.w || null;
+  const status = winner ? 'Clasificado' : complete ? 'Empate global' : 'Pendiente';
+  const scoreCell = v => v === '' ? '—' : v;
+  return `<div class="tiecard">
+    <div class="tiehead"><strong>Llave ${slot+1}</strong><span class="bstatus${winner?' done':''}">${status}</span></div>
+    <div class="tiegrid">
+      <div class="th">Equipo</div><div class="th">Ida</div><div class="th">Vuelta</div><div class="th">Global</div>
+      <div class="${winner===homeTeam?'b':''}">${homeTeam?esc(teamName(homeTeam)):'Por definir'}</div><div class="score">${scoreCell(idaHome)}</div><div class="score">${scoreCell(vueltaHome)}</div><div class="score">${complete?globalHome:'—'}</div>
+      <div class="${winner===awayTeam?'b':''}">${awayTeam?esc(teamName(awayTeam)):'Por definir'}</div><div class="score">${scoreCell(idaAway)}</div><div class="score">${scoreCell(vueltaAway)}</div><div class="score">${complete?globalAway:'—'}</div>
+    </div>
+    <div class="tie-actions">
+      ${ida?`<button class="link admin-only" onclick="editMatch('${ida.id}')">Editar ida · ${esc(fmtDate(ida.date)||'sin fecha')}</button>`:''}
+      ${vuelta?`<button class="link admin-only" onclick="editMatch('${vuelta.id}')">Editar vuelta · ${esc(fmtDate(vuelta.date)||'sin fecha')}</button>`:''}
+    </div>
+    ${complete && !winner?'<div class="bmeta">Empate global: cargá los penales en la vuelta para definir el clasificado.</div>':''}
+  </div>`;
+}
 function slotCards(ph){
+  if(ph==='octavos') return Array.from({length:8},(_,i)=>octavosTieCard(i)).join('');
   const all = state.matches.filter(m=>m.phase===ph);
   const shown = new Set(); let html = '';
   for(let i=0;i<(PHASE_SIZE[ph]||0);i++){
     const m = all.find(x=>x.slot===i);
     if(m) shown.add(m.id);
-    html += bracketCard(m, ph==='octavos' ? i+1 : null);
+    html += bracketCard(m, null);
   }
   all.filter(m=>!shown.has(m.id)).forEach(m=>{ html += bracketCard(m); });
   return html;
 }
   
 function generateOctavosFromGroups(){
-    if(!isAdmin) return;
-    const a = computeStandings('A').slice(0, 8);
-    const b = computeStandings('B').slice(0, 8);
-    
-    if(a.length < 8 || b.length < 8){ 
-        bracketMsg = 'Se necesitan al menos 8 equipos clasificados en cada grupo (A y B) para generar los Octavos.'; 
-        renderBracket(); 
-        return; 
-    }
-
-    if(state.matches.some(m => PHASE_ORDER.includes(m.phase)) && !octavosConfirm){
-        octavosConfirm = true;
-        bracketMsg = 'Ya hay partidos de eliminatorias. Tocá el botón de nuevo para confirmar la regeneración.';
-        renderBracket(); 
-        return;
-    }
-    
-    octavosConfirm = false;
-    state.matches = state.matches.filter(m => !PHASE_ORDER.includes(m.phase));
-
-    // 1. Octavos de Final (8 llaves / 16 equipos con Ida y Vuelta)
-    for(let i = 0; i < 8; i++){
-        const teamA = a[i];
-        const teamB = b[7 - i];
-        
-        // Ida
-        state.matches.push({
-            id: 'oct_' + (i + 1) + '_ida',
-            phase: 'octavos',
-            home: teamA,
-            away: teamB,
-            leg: 1
-        });
-        // Vuelta
-        state.matches.push({
-            id: 'oct_' + (i + 1) + '_vuelta',
-            phase: 'octavos',
-            home: teamB,
-            away: teamA,
-            leg: 2
-        });
-    }
-
-    // 2. Cuartos de Final (Exactamente 4 partidos)
-    for(let i = 0; i < 4; i++){
-        state.matches.push({
-            id: 'cuartos_' + (i + 1),
-            phase: 'cuartos',
-            home: null,
-            away: null
-        });
-    }
-
-    // 3. Semifinales (Exactamente 2 partidos)
-    for(let i = 0; i < 2; i++){
-        state.matches.push({
-            id: 'semis_' + (i + 1),
-            phase: 'semis',
-            home: null,
-            away: null
-        });
-    }
-
-    // 4. Tercer Puesto y Final (1 partido cada uno)
-    state.matches.push({ id: 'tercero', phase: 'tercero', home: null, away: null });
-    state.matches.push({ id: 'final', phase: 'final', home: null, away: null });
-
-    bracketMsg = '¡Cruces de Octavos y fases generados correctamente!';
-    if(typeof persist === 'function') persist();
+  if(!isAdmin) return;
+  const a = computeStandings('A').slice(0,8);
+  const b = computeStandings('B').slice(0,8);
+  if(a.length<8 || b.length<8){
+    bracketMsg='Se necesitan al menos 8 equipos clasificados en cada grupo (A y B) para generar los Octavos.';
     renderBracket();
+    return;
+  }
+  if(state.matches.some(m=>PHASE_ORDER.includes(m.phase)) && !octavosConfirm){
+    octavosConfirm=true;
+    bracketMsg='Ya hay partidos de eliminatorias. Tocá el botón de nuevo para confirmar la regeneración.';
+    renderBracket();
+    return;
+  }
+  octavosConfirm=false;
+  state.matches=state.matches.filter(m=>!PHASE_ORDER.includes(m.phase));
+  for(let i=0;i<8;i++){
+    const teamA=a[i].id;
+    const teamB=b[7-i].id;
+    state.matches.push({id:`oct_${i+1}_ida`,phase:'octavos',slot:i,leg:1,date:'',time:'',home:teamA,away:teamB,hscore:null,ascore:null,hpen:null,apen:null,protest:false});
+    state.matches.push({id:`oct_${i+1}_vuelta`,phase:'octavos',slot:i,leg:2,date:'',time:'',home:teamB,away:teamA,hscore:null,ascore:null,hpen:null,apen:null,protest:false});
+  }
+  bracketMsg='¡Se generaron las 8 llaves de Octavos con ida y vuelta!';
+  persist();
+  renderBracket();
 }
   function generateInterserialFromGroups() {
     if(!isAdmin) return;
@@ -1584,23 +1580,6 @@ renderReglamento();
 renderWindows();
 renderTransfers();
 renderStandings();
-  function reprogramarFecha(nombreJornada, diasASumar) {
-    if (!confirm(`¿Estás seguro de mover todos los partidos de la ${nombreJornada} ${diasASumar} días adelante?`)) {
-        return;
-    }
-
-    state.matches.forEach(m => {
-        if ((m.phase || 'grupos') === nombreJornada && m.date) {
-            let fechaOriginal = new Date(m.date + 'T00:00:00');
-            fechaOriginal.setDate(fechaOriginal.getDate() + diasASumar);
-            m.date = fechaOriginal.toISOString().slice(0, 10);
-        }
-    });
-
-    persist();
-    renderMatches();
-    alert("¡Fecha reprogramada con éxito!");
-}
 try{ const lt=localStorage.getItem('liga-last-tab'); const lb=lt && document.querySelector('.tab-btn[data-tab="'+lt+'"]'); if(lb) lb.click(); }catch(e){}
 </script>
 <script>
