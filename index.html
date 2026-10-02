@@ -769,10 +769,14 @@ function savePlayerFor(teamId){
   const nameEl = document.getElementById('rp-name-'+teamId);
   const name = nameEl.value.trim();
   if(!name) return;
-  const dup = state.players.find(p=>p.id!==editingPlayerId && norm(p.name)===norm(name));
+  const documentValue = document.getElementById('rp-document-'+teamId).value.trim();
+  const dupDoc = documentValue ? state.players.find(p=>p.id!==editingPlayerId && p.document && norm(p.document)===norm(documentValue)) : null;
+  const dupName = state.players.find(p=>p.id!==editingPlayerId && norm(p.name)===norm(name));
+  const dup = dupDoc || dupName;
   const warn = document.getElementById('rp-dup-'+teamId);
-  if(dup && !dupConfirmed){
-    warn.textContent = `⚠ Ya existe un jugador llamado "${dup.name}" (${teamName(dup.team)}). Tocá "Guardar" de nuevo para confirmar igual.`;
+  if(dup && dup.team!==teamId && !dupConfirmed){
+    const motivo = dupDoc ? 'con ese documento' : 'con ese nombre';
+    warn.textContent = `⚠ Este jugador ya figura en el club "${teamName(dup.team)}" ${motivo}. Si corresponde a una transferencia, debe realizarse desde Transferencias. Tocá "Guardar" de nuevo solo si verificaste que no es el mismo jugador.`;
     warn.style.display='block';
     dupConfirmed = true;
     return;
@@ -1445,11 +1449,17 @@ function assignEliminationDates(){
   if(!baseMatch) return;
   const base=new Date(baseMatch.date+'T00:00:00');
   const phaseDay={oro_cuartos:3,plata_cuartos:3,oro_semi:4,plata_semi:4,oro_clas_cuartos:4,oro_final:5,oro_tercer:5,oro_5to:5,oro_7mo:5,plata_final:5,plata_tercer:5};
+  // Solo asignar una fecha automática si el partido todavía no tiene fecha.
+  // Una vez que el administrador modifica la fecha, esa fecha queda respetada.
   state.matches.filter(m=>m.phase==='octavos').forEach(m=>{
-    const day=m.leg===2?2:1;
-    m.date=new Date(base.getTime()+day*86400000).toISOString().slice(0,10);
+    if(!m.date){
+      const day=m.leg===2?2:1;
+      m.date=new Date(base.getTime()+day*86400000).toISOString().slice(0,10);
+    }
   });
-  Object.entries(phaseDay).forEach(([ph,day])=>state.matches.filter(m=>m.phase===ph).forEach(m=>{ m.date=new Date(base.getTime()+day*86400000).toISOString().slice(0,10); }));
+  Object.entries(phaseDay).forEach(([ph,day])=>state.matches.filter(m=>m.phase===ph).forEach(m=>{
+    if(!m.date) m.date=new Date(base.getTime()+day*86400000).toISOString().slice(0,10);
+  }));
 }
 
 function generateFixture(){
