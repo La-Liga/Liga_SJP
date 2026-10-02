@@ -825,6 +825,13 @@ function saveTournamentName(){
   if(v) state.settings.tournamentName=v;
   persist(); renderTournamentManager();
 }
+function deleteArchivedTournament(id){
+  if(!isAdmin) return;
+  const t=(state.tournaments||[]).find(x=>x.id===id); if(!t) return;
+  if(!confirm(`¿Borrar el torneo guardado "${t.name||'Torneo'}"? Esta acción no se puede deshacer.`)) return;
+  state.tournaments=state.tournaments.filter(x=>x.id!==id);
+  persist(); renderTournamentManager();
+}
 function renderTournamentManager(){
   const nameEl=document.getElementById('tournament-name');
   if(nameEl) nameEl.value=state.settings.tournamentName||'Torneo actual';
@@ -836,7 +843,7 @@ function renderTournamentManager(){
   const h=document.getElementById('tournament-history');
   if(h){
     const list=[...(state.tournaments||[])].reverse();
-    h.innerHTML=list.length ? '<p class="fase-h">Torneos guardados</p>'+list.map(t=>`<div class="row" style="justify-content:space-between;border-bottom:1px solid var(--border);padding:6px 0"><span>${esc(t.name||'Torneo')}<br><span class="empty">Campeón: ${esc(teamName(t.champion))}</span></span><span class="empty">${esc(t.finishedAt||'')}</span></div>`).join('') : '<p class="empty">Todavía no hay torneos archivados.</p>';
+    h.innerHTML=list.length ? '<p class="fase-h">Torneos guardados</p>'+list.map(t=>`<div class="row" style="justify-content:space-between;border-bottom:1px solid var(--border);padding:6px 0;gap:8px"><span style="flex:1">${esc(t.name||'Torneo')}<br><span class="empty">Campeón: ${esc(teamName(t.champion))}</span></span><span class="empty">${esc(t.finishedAt||'')}</span><button class="link danger" style="font-size:11px;padding:2px 5px" onclick="deleteArchivedTournament('${t.id}')">Borrar</button></div>`).join('') : '<p class="empty">Todavía no hay torneos archivados.</p>';
   }
 }
 function finishTournament(){
@@ -1152,7 +1159,13 @@ function renderMatches(){
     }).join('');
   }
 
-  el.innerHTML = PLAY_ORDER.map((ph, index)=>{
+  // Incluimos también fases antiguas/no normalizadas (por ejemplo "grupos")
+  // para que ningún partido pendiente desaparezca al modificar su horario.
+  const phaseList = PLAY_ORDER.slice();
+  const known = new Set(phaseList);
+  state.matches.forEach(m=>{ const ph=m.phase||'grupos'; if(!known.has(ph)){ known.add(ph); phaseList.push(ph); } });
+
+  el.innerHTML = phaseList.map((ph, index)=>{
     const ms=list.filter(m=>(m.phase||'grupos')===ph);
     if(!ms.length) return '';
     const allPhaseMatches=state.matches.filter(m=>(m.phase||'grupos')===ph);
@@ -1170,7 +1183,7 @@ function renderMatches(){
     }
 
     const eliminationRound={oro_cuartos:'Fecha 15 — Cuartos de final',plata_cuartos:'Fecha 15 — Cuartos de final',oro_semi:'Fecha 16 — Semifinales',plata_semi:'Fecha 16 — Semifinales',oro_final:'Fecha 17 — Finales',plata_final:'Fecha 17 — Finales',oro_tercer:'Fecha 17 — 3º puesto',oro_5to:'Fecha 17 — 5º puesto',oro_7mo:'Fecha 17 — 7º puesto',plata_tercer:'Fecha 17 — 3º puesto'};
-    const nombreFecha=eliminationRound[ph] || (ph==='interserial'?'Fecha 12 — Interserial':`Fecha ${index+1}`);
+    const nombreFecha=eliminationRound[ph] || (ph==='interserial'?'Fecha 12 — Interserial' : ph==='grupos' ? 'Fase de grupos — partidos recuperados' : `Fecha ${index+1}`);
     return `<div style="margin-top:14px"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><p class="fase-h" style="margin:0">${nombreFecha} <span class="empty">(${ms.length} partidos)</span></p>${adminDate}</div>${cards(ms)}</div>`;
   }).join('') + (list.some(m=>m.protest)?'<p class="empty">* Partido protestado</p>':'');
 }
@@ -1192,13 +1205,14 @@ function renderResultados(){
   if(!el) return;
   const played = state.matches.filter(isPlayed);
   if(!played.length){ el.innerHTML='<p class="empty">Todavía no hay resultados cargados.</p>'; return; }
-  const FULL = ['grupos', ...PHASE_ORDER];
-  const phases = [...new Set(played.map(m=>m.phase||'grupos'))];
-  const maxD = ph => played.filter(m=>(m.phase||'grupos')===ph).reduce((a,m)=> (m.date||'')>a ? (m.date||'') : a, '');
-  phases.sort((a,b)=>{ const da=maxD(a), db=maxD(b); return da!==db ? db.localeCompare(da) : FULL.indexOf(b)-FULL.indexOf(a); });
-  el.innerHTML = phases.map(ph=>`<p class="fase-h">${PHASES[ph]}</p>` +
-    played.filter(m=>(m.phase||'grupos')===ph).sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(resultRow).join('')
-  ).join('') + (played.some(m=>m.protest)?'<p class="empty">* Partido protestado</p>':'');
+  const dates = [...new Set(played.map(m=>m.date||'').filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+  const sinFecha = played.filter(m=>!m.date);
+  const blocks = dates.map((date,idx)=>{
+    const ms=played.filter(m=>(m.date||'')===date).sort((a,b)=>(a.time||'99:99').localeCompare(b.time||'99:99') || String(a.id).localeCompare(String(b.id)));
+    return `<div style="margin-top:14px"><p class="fase-h">Fecha ${idx+1} — ${fmtDate(date)} <span class="empty">(${ms.length} resultados)</span></p>${ms.map(resultRow).join('')}</div>`;
+  });
+  if(sinFecha.length) blocks.push(`<div style="margin-top:14px"><p class="fase-h">Resultados sin fecha</p>${sinFecha.map(resultRow).join('')}</div>`);
+  el.innerHTML=blocks.join('') + (played.some(m=>m.protest)?'<p class="empty">* Partido protestado</p>':'');
 }
 
 // ---- pestaña Eliminatorias ----
@@ -1759,8 +1773,8 @@ function computeStandings(group){
   return Object.values(stats).map(s=>({...s, dg:s.gf-s.gc, pts:s.g*3+s.e})).sort((a,b)=> b.pts-a.pts || b.dg-a.dg || b.gf-a.gf || a.name.localeCompare(b.name));
 }
 function standingsTable(rows){
-  return `<div class="table-wrap"><table><thead><tr><th>Equipo</th><th class="num">PJ</th><th class="num">G</th><th class="num">E</th><th class="num">P</th><th class="num">GF</th><th class="num">GC</th><th class="num">DG</th><th class="num">Pts</th></tr></thead><tbody>
-  ${rows.map(r=>`<tr><td class="team-a">${esc(r.name)}${r.protest?' *':''}</td><td class="num">${r.pj}</td><td class="num">${r.g}</td><td class="num">${r.e}</td><td class="num">${r.p}</td><td class="num">${r.gf}</td><td class="num">${r.gc}</td><td class="num">${r.dg}</td><td class="num" style="font-weight:700;color:var(--primary)">${r.pts}</td></tr>`).join('')}
+  return `<div class="table-wrap"><table><thead><tr><th>#</th><th>Equipo</th><th class="num">PJ</th><th class="num">G</th><th class="num">E</th><th class="num">P</th><th class="num">GF</th><th class="num">GC</th><th class="num">DG</th><th class="num">Pts</th></tr></thead><tbody>
+  ${rows.map((r,i)=>`<tr><td class="num" style="font-weight:700;${i>=rows.length-4?'color:#e53935':''}">${i+1}</td><td class="team-a">${esc(r.name)}${r.protest?' *':''}</td><td class="num">${r.pj}</td><td class="num">${r.g}</td><td class="num">${r.e}</td><td class="num">${r.p}</td><td class="num">${r.gf}</td><td class="num">${r.gc}</td><td class="num">${r.dg}</td><td class="num" style="font-weight:700;color:var(--primary)">${r.pts}</td></tr>`).join('')}
   </tbody></table></div>`;
 }
 function renderStandings(){
