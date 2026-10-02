@@ -985,7 +985,7 @@ function renderMatches(){
    const nombreFecha = (ph === 'interserial') ? 'Fecha Interserial' : `Fecha ${index + 1}`;
 return `<div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px;">
     <p class="fase-h" style="margin: 0;">${nombreFecha}</p>
-    <button class="btn small admin-only" onclick="reprogramarFase('${ph}')" title="Mover partidos de esta fecha 7 días adelante">🌧️ Mover Fecha</button>
+    <button class="btn small admin-only" onclick="reprogramarFecha('${ph}')" title="Mover partidos de esta fecha 7 días adelante">🌧️ Mover Fecha</button>
 </div>` + ms.map(m => {
       const when = [fmtDate(m.date), m.time].filter(Boolean).join(' ');
       return `<div class="pcard" onclick="openMatchDetail('${m.id}')">
