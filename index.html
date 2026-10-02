@@ -318,14 +318,14 @@ sup{font-size:.7em;color:var(--muted);margin-left:2px;}
         <option value="oro_cuartos">Copa de Oro — Cuartos de final</option>
         <option value="oro_semi">Copa de Oro — Semifinales</option>
         <option value="oro_final">Copa de Oro — Final</option>
-        <option value="oro_tercer">Copa de Oro — 3ª posición</option>
+        <option value="oro_tercer">Copa de Oro — 3º puesto</option>
         <option value="oro_clas_cuartos">Clasificación 5º-8º — Semifinales</option>
         <option value="oro_5to">Partido por el 5º puesto</option>
         <option value="oro_7mo">Partido por el 7º puesto</option>
         <option value="plata_cuartos">Copa de Plata — Cuartos de final</option>
         <option value="plata_semi">Copa de Plata — Semifinales</option>
         <option value="plata_final">Copa de Plata — Final</option>
-        <option value="plata_tercer">Copa de Plata — 3ª/4ª posición</option>
+        <option value="plata_tercer">Copa de Plata — 3º puesto</option>
       </select></div>
       <div><label>Fecha</label><input type="date" id="m-date"></div>
       <div><label>Hora</label><input type="time" id="m-time"></div>
@@ -991,7 +991,30 @@ return `<div style="display: flex; justify-content: space-between; align-items: 
     }).join('');
   }).join('') + (list.some(m=>m.protest)?'<p class="empty">* Partido protestado</p>':'');
 }
+function reprogramarfase(ph) {
+    if (!isAdmin) {
+        alert("Acción solo permitida para administradores.");
+        return;
+    }
+    
+    if (!confirm(`¿Estás seguro de reprogramar todos los partidos de la fase "${ph}" sumando 7 días?`)) {
+        return;
+    }
 
+    state.matches.forEach(m => {
+        if ((m.phase || 'grupos') === ph && m.date) {
+            let d = new Date(m.date + 'T00:00:00');
+            d.setDate(d.getDate() + 7);
+            m.date = d.toISOString().split('T')[0];
+        }
+    });
+
+    if (typeof persist === 'function') persist();
+    if (typeof renderMatches === 'function') renderMatches();
+    
+    alert("¡Partidos reprogramados con éxito!");
+}
+  
 // ---- pestaña Resultados: agrupados por fase, como en la app de referencia ----
 function resultRow(m){
   const o = matchOutcome(m), w = o ? o.w : null, pens = hasPens(m);
@@ -1055,31 +1078,80 @@ function slotCards(ph){
   all.filter(m=>!shown.has(m.id)).forEach(m=>{ html += bracketCard(m); });
   return html;
 }
+  
 function generateOctavosFromGroups(){
-  if(!isAdmin) return;
-  const a = computeStandings('A').slice(0, 8), b = computeStandings('B').slice(0, 8);
-  const n = Math.min(a.length, b.length);
-  if(n<2){ bracketMsg='Hacen falta equipos en Grupo A y Grupo B para generar los cruces.'; renderBracket(); return; }
-  if(state.matches.some(m=>PHASE_ORDER.includes(m.phase)) && !octavosConfirm){
-    octavosConfirm = true;
-    bracketMsg='Ya hay partidos de eliminatorias. Tocá el botón de nuevo para volver a generar el cuadro (se reemplazan los cruces actuales).';
-    renderBracket(); return;
-  }
-  octavosConfirm = false;
-  state.matches = state.matches.filter(m=>!PHASE_ORDER.includes(m.phase));
-  const half = Math.floor(n/2);
-  const order = half===4 ? [0,3,1,2] : [...Array(half).keys()];
-  const pairs = [];
-    order.forEach(i => {
-        const local = a[i];
-        const visitante = b[n - 1 - i];
-        if (local && visitante) {
-            // Partido de Ida
-            pairs.push({ home: local, away: visitante, phase: '8vos_ida' });
-            // Partido de Vuelta (invierte local y visitante)
-            pairs.push({ home: visitante, away: local, phase: '8vos_vuelta' });
-        }
-    });
+    if(!isAdmin) return;
+    const a = computeStandings('A').slice(0, 8);
+    const b = computeStandings('B').slice(0, 8);
+    
+    if(a.length < 8 || b.length < 8){ 
+        bracketMsg = 'Se necesitan al menos 8 equipos clasificados en cada grupo (A y B) para generar los Octavos.'; 
+        renderBracket(); 
+        return; 
+    }
+
+    if(state.matches.some(m => PHASE_ORDER.includes(m.phase)) && !octavosConfirm){
+        octavosConfirm = true;
+        bracketMsg = 'Ya hay partidos de eliminatorias. Tocá el botón de nuevo para confirmar la regeneración.';
+        renderBracket(); 
+        return;
+    }
+    
+    octavosConfirm = false;
+    state.matches = state.matches.filter(m => !PHASE_ORDER.includes(m.phase));
+
+    // 1. Octavos de Final (8 llaves / 16 equipos con Ida y Vuelta)
+    for(let i = 0; i < 8; i++){
+        const teamA = a[i];
+        const teamB = b[7 - i];
+        
+        // Ida
+        state.matches.push({
+            id: 'oct_' + (i + 1) + '_ida',
+            phase: 'octavos',
+            home: teamA,
+            away: teamB,
+            leg: 1
+        });
+        // Vuelta
+        state.matches.push({
+            id: 'oct_' + (i + 1) + '_vuelta',
+            phase: 'octavos',
+            home: teamB,
+            away: teamA,
+            leg: 2
+        });
+    }
+
+    // 2. Cuartos de Final (Exactamente 4 partidos)
+    for(let i = 0; i < 4; i++){
+        state.matches.push({
+            id: 'cuartos_' + (i + 1),
+            phase: 'cuartos',
+            home: null,
+            away: null
+        });
+    }
+
+    // 3. Semifinales (Exactamente 2 partidos)
+    for(let i = 0; i < 2; i++){
+        state.matches.push({
+            id: 'semis_' + (i + 1),
+            phase: 'semis',
+            home: null,
+            away: null
+        });
+    }
+
+    // 4. Tercer Puesto y Final (1 partido cada uno)
+    state.matches.push({ id: 'tercero', phase: 'tercero', home: null, away: null });
+    state.matches.push({ id: 'final', phase: 'final', home: null, away: null });
+
+    bracketMsg = '¡Cruces de Octavos y fases generados correctamente!';
+    if(typeof persist === 'function') persist();
+    renderBracket();
+   }
+  });
 
     pairs.forEach((p, slot) => {
         state.matches.push({
