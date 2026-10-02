@@ -1150,21 +1150,6 @@ function generateOctavosFromGroups(){
     bracketMsg = '¡Cruces de Octavos y fases generados correctamente!';
     if(typeof persist === 'function') persist();
     renderBracket();
-   }
-  });
-
-    pairs.forEach((p, slot) => {
-        state.matches.push({
-            id: 'm_' + p.phase + '_' + slot + '_' + Date.now(),
-            phase: p.phase,
-            home: p.home.teamId || p.home,
-            away: p.away.teamId || p.away,
-            hscore: null,
-            ascore: null
-        });
-    });
-  persist();
-  renderMatchViews();
 }
   function generateInterserialFromGroups() {
     if(!isAdmin) return;
