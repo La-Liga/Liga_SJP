@@ -200,7 +200,10 @@ sup{font-size:.7em;color:var(--muted);margin-left:2px;}
   <!-- PARTIDOS -->
   <div class="panel" id="panel-partidos">
     <div class="card admin-only">
-      <button class="btn ghost" onclick="toggleFixtureForm()">+ Generar fixture automático</button>
+      <div class="row" style="flex-wrap:wrap;gap:8px">
+        <button class="btn ghost" onclick="toggleFixtureForm()">+ Generar fixture automático</button>
+        <button class="btn danger" onclick="deleteAllMatches()">🗑 Borrar fixture</button>
+      </div>
       <div id="fixture-form-fields" style="display:none;margin-top:12px">
         <div class="grid">
           <div><label>Fecha de la 1ª fecha</label><input type="date" id="fx-start"></div>
@@ -933,11 +936,12 @@ function deleteMatchFromModal(){
   if(!delConfirm){ delConfirm=true; btn.textContent='¿Seguro? Tocá de nuevo para borrar'; return; }
   const id = editingMatchId; cancelMatchEdit(); deleteMatch(id);
 }
-  function updateMatchDate(id, value){
+  function updatePhaseDate(phase, value){
   if(!isAdmin) return;
-  const m = state.matches.find(x=>x.id===id);
-  if(!m) return;
-  m.date = value || '';
+  const matches = state.matches.filter(m=>(m.phase||'grupos')===phase);
+  if(!matches.length) return;
+  if(!confirm(`¿Cambiar la fecha de los ${matches.length} partidos de esta jornada?`)) return;
+  matches.forEach(m=>{ m.date = value || ''; });
   persist();
   renderMatchViews();
 }
@@ -960,19 +964,17 @@ function renderMatchPanel(id){
     ${goals.length?`<p class="empty" style="margin-top:8px">${goals.map(g=>`⚽ ${esc(playerName(g.player))} (${g.goals}) <button class="link danger" onclick="deleteGoal('${g.id}');renderMatchPanel('${id}')">x</button>`).join(' &nbsp; ')}</p>`:''}
     ${cards.length?`<p class="empty">${cards.map(c=>`${c.type==='Roja'?'🟥':'🟨'} ${esc(playerName(c.player))} <button class="link danger" onclick="deleteCard('${c.id}');renderMatchPanel('${id}')">x</button>`).join(' &nbsp; ')}</p>`:''}`;
 }
-function deleteAllMatches() {
-    if (confirm("¿Estás seguro de que deseas eliminar todo el fixture? Esta acción borrará todos los partidos creados.")) {
-        firebase.database().ref('matches').remove()
-            .then(() => {
-                alert("¡Fixture borrado con éxito!");
-                state.matches = [];
-                renderMatches();
-            })
-            .catch((error) => {
-                console.error("Error al borrar el fixture:", error);
-                alert("Hubo un error al intentar borrar el fixture.");
-            });
-    }
+function deleteAllMatches(){
+  if(!isAdmin) return;
+  if(!state.matches.length){ alert('No hay partidos para borrar.'); return; }
+  if(!confirm('¿Borrar todo el fixture? Se eliminarán todos los partidos y sus fechas. Esta acción no se puede deshacer.')) return;
+  const ids = new Set(state.matches.map(m=>m.id));
+  state.matches = [];
+  state.goals = (state.goals||[]).filter(g=>!ids.has(g.match));
+  state.cards = (state.cards||[]).filter(c=>!ids.has(c.match));
+  persist();
+  renderAll();
+  alert('Fixture borrado correctamente.');
 }
 // ---- detalle de partido (para todos; no cambia de pestaña) ----
 function openMatchDetail(id){ detailId=id; renderDetail(); openModal('detail-modal'); }
@@ -1010,14 +1012,16 @@ function renderMatches(){
     const ms = list.filter(m=>(m.phase||'grupos')===ph).sort((a,b)=> (a.date||'9999').localeCompare(b.date||'9999') || (a.time||'').localeCompare(b.time||''));
     if(!ms.length) return '';
    const nombreFecha = (ph === 'interserial') ? 'Fecha Interserial' : `Fecha ${index + 1}`;
-return `<div style="display:flex; justify-content:space-between; align-items:center; margin-top:14px;">
-    <p class="fase-h" style="margin:0;">${nombreFecha}</p>
-    <span class="empty admin-only" style="font-size:.78rem;">📅 Editá la fecha directamente</span>
+    const allPhaseMatches = state.matches.filter(m=>(m.phase||'grupos')===ph);
+    const commonDate = allPhaseMatches.length && allPhaseMatches.every(m=>m.date===allPhaseMatches[0].date) ? (allPhaseMatches[0].date||'') : '';
+return `<div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-top:14px;">
+    <p class="fase-h" style="margin:0;">${nombreFecha} <span class="empty">(${allPhaseMatches.length} partidos)</span></p>
+    ${isAdmin ? `<label style="display:flex;align-items:center;gap:6px;font-size:.85rem;">📅 Fecha de toda la jornada <input type="date" value="${esc(commonDate)}" onchange="updatePhaseDate('${ph}',this.value)" title="Cambiar fecha de todos los partidos de esta jornada"></label>` : ''}
 </div>` + ms.map(m => {
       const when = [fmtDate(m.date), m.time].filter(Boolean).join(' ');
       return `<div class="pcard" onclick="openMatchDetail('${m.id}')">
       <div class="pinfo">
-        <div class="pdate">${isAdmin ? `<input type="date" value="${esc(m.date||'')}" onclick="event.stopPropagation()" onchange="updateMatchDate('${m.id}',this.value)" title="Cambiar fecha">` : (when?esc(when):'Sin fecha')}${m.protest?' *':''}</div>
+        <div class="pdate">${when?esc(when):'Sin fecha'}${m.protest?' *':''}</div>
         <div class="pteams"><span class="team-a">${esc(teamName(m.home))}</span><span class="vs-pill">VS</span><span class="team-a">${esc(teamName(m.away))}</span></div>
       </div>
     </div>`;
