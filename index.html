@@ -486,7 +486,13 @@ function fillSelect(id, html){
   if([...el.options].some(o=>o.value===prev)) el.value = prev;
 }
 function norm(s){ return (s||'').trim().toLowerCase(); }
-function teamName(id){ if(!id) return 'Por definir'; const t=state.teams.find(x=>x.id===id); return t?t.name:'Equipo eliminado'; }
+function teamName(id){
+  if(!id) return 'Por definir';
+  if(typeof id === 'object') return id.name || id.nombre || id.teamName || 'Por definir';
+  const t=state.teams.find(x=>String(x.id)===String(id));
+  if(t) return t.name;
+  return String(id).startsWith('Equipo ') ? String(id) : 'Equipo eliminado';
+}
 function playerName(id){ const p=state.players.find(x=>x.id===id); return p?p.name:'Jugador eliminado'; }
 function playerTeam(id){ const p=state.players.find(x=>x.id===id); return p?p.team:null; }
 function windowName(id){ const w=state.windows.find(x=>x.id===id); return w?w.name:'—'; }
@@ -927,25 +933,13 @@ function deleteMatchFromModal(){
   if(!delConfirm){ delConfirm=true; btn.textContent='¿Seguro? Tocá de nuevo para borrar'; return; }
   const id = editingMatchId; cancelMatchEdit(); deleteMatch(id);
 }
-  function reprogramarFase(ph) {
+  function updateMatchDate(id, value){
   if(!isAdmin) return;
-  const partidos = state.matches.filter(m => (m.phase || 'grupos') === ph && m.date);
-  if(!partidos.length){
-    alert('Esta fecha no tiene partidos con fecha cargada.');
-    return;
-  }
-  const nombre = ph === 'interserial' ? 'Fecha Interserial' : (ph.startsWith('fecha_') ? 'Fecha ' + ph.split('_')[1] : (PHASES[ph] || ph));
-  if(!confirm(`¿Mover todos los partidos de ${nombre} 7 días adelante?`)) return;
-  partidos.forEach(m => {
-    const p = String(m.date).split('-').map(Number);
-    if(p.length !== 3 || p.some(Number.isNaN)) return;
-    const d = new Date(p[0], p[1]-1, p[2]);
-    d.setDate(d.getDate()+7);
-    m.date = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-  });
+  const m = state.matches.find(x=>x.id===id);
+  if(!m) return;
+  m.date = value || '';
   persist();
   renderMatchViews();
-  alert(`¡${nombre} fue movida 7 días adelante!`);
 }
 function toggleFixtureForm(){
   const el = document.getElementById('fixture-form-fields');
@@ -1016,14 +1010,14 @@ function renderMatches(){
     const ms = list.filter(m=>(m.phase||'grupos')===ph).sort((a,b)=> (a.date||'9999').localeCompare(b.date||'9999') || (a.time||'').localeCompare(b.time||''));
     if(!ms.length) return '';
    const nombreFecha = (ph === 'interserial') ? 'Fecha Interserial' : `Fecha ${index + 1}`;
-return `<div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px;">
-    <p class="fase-h" style="margin: 0;">${nombreFecha}</p>
-    <button class="btn small admin-only" onclick="reprogramarFase('${ph}')" title="Mover partidos de esta fecha 7 días adelante">🌧️ Mover Fecha</button>
+return `<div style="display:flex; justify-content:space-between; align-items:center; margin-top:14px;">
+    <p class="fase-h" style="margin:0;">${nombreFecha}</p>
+    <span class="empty admin-only" style="font-size:.78rem;">📅 Editá la fecha directamente</span>
 </div>` + ms.map(m => {
       const when = [fmtDate(m.date), m.time].filter(Boolean).join(' ');
       return `<div class="pcard" onclick="openMatchDetail('${m.id}')">
       <div class="pinfo">
-        ${when?`<div class="pdate">${esc(when)}${m.protest?' *':''}</div>`:''}
+        <div class="pdate">${isAdmin ? `<input type="date" value="${esc(m.date||'')}" onclick="event.stopPropagation()" onchange="updateMatchDate('${m.id}',this.value)" title="Cambiar fecha">` : (when?esc(when):'Sin fecha')}${m.protest?' *':''}</div>
         <div class="pteams"><span class="team-a">${esc(teamName(m.home))}</span><span class="vs-pill">VS</span><span class="team-a">${esc(teamName(m.away))}</span></div>
       </div>
     </div>`;
