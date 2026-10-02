@@ -374,6 +374,10 @@ function normalizeState(s){
   s.goals = s.goals || []; s.windows = s.windows || []; s.transfers = s.transfers || [];
   s.cards = s.cards || []; s.fines = s.fines || []; s.suspensionsServed = s.suspensionsServed || {};
   s.settings = s.settings || {};
+  s.bracketOrder = s.bracketOrder || {};
+  if(!Array.isArray(s.bracketOrder.octavos) || s.bracketOrder.octavos.length!==8) s.bracketOrder.octavos=[0,1,2,3,4,5,6,7];
+  if(!Array.isArray(s.bracketOrder.oro_cuartos) || s.bracketOrder.oro_cuartos.length!==4) s.bracketOrder.oro_cuartos=[0,1,2,3];
+  if(!Array.isArray(s.bracketOrder.plata_cuartos) || s.bracketOrder.plata_cuartos.length!==4) s.bracketOrder.plata_cuartos=[0,1,2,3];
   s.teams.forEach(t=>{ if(t.group===undefined) t.group=''; });
   const OLD_PHASE_MAP = {cuartos:'oro_cuartos', semifinal:'oro_semi', final:'oro_final', oro_clasificacion:'oro_clas_cuartos', oro_clas_semi:'oro_clas_cuartos'};
   const used = {};
@@ -847,11 +851,15 @@ function feedTeam(f, i){
   if(!o) return null;
   return f.take==='winner' ? o.w : o.l;
 }
+function sourceSlotFor(ph, pos){
+  const order = state.bracketOrder && Array.isArray(state.bracketOrder[ph]) ? state.bracketOrder[ph] : null;
+  return order && order[pos]!=null ? order[pos] : pos;
+}
 function syncBracket(){
   SYNC_ORDER.forEach(ph=>{
     const f = FEEDS[ph];
     for(let i=0;i<PHASE_SIZE[ph];i++){
-      const a = feedTeam(f, 2*i), b = feedTeam(f, 2*i+1);
+      const a = feedTeam(f, sourceSlotFor(ph, 2*i)), b = feedTeam(f, sourceSlotFor(ph, 2*i+1));
       const m = findSlot(ph, i);
       if(!m){
         if(!a && !b) continue;
@@ -1155,7 +1163,10 @@ function octavosTieCard(slot){
   </div>`;
 }
 function slotCards(ph){
-  if(ph==='octavos') return Array.from({length:8},(_,i)=>octavosTieCard(i)).join('');
+  if(ph==='octavos'){
+    const order = state.bracketOrder && Array.isArray(state.bracketOrder.octavos) && state.bracketOrder.octavos.length===8 ? state.bracketOrder.octavos : [0,1,2,3,4,5,6,7];
+    return order.map(i=>octavosTieCard(i)).join('');
+  }
   const all = state.matches.filter(m=>m.phase===ph);
   const shown = new Set(); let html = '';
   for(let i=0;i<(PHASE_SIZE[ph]||0);i++){
@@ -1165,6 +1176,76 @@ function slotCards(ph){
   }
   all.filter(m=>!shown.has(m.id)).forEach(m=>{ html += bracketCard(m); });
   return html;
+}
+
+function phaseHasPlayed(ph){ return state.matches.some(m=>m.phase===ph && isPlayed(m)); }
+function octavosHasPlayed(){ return state.matches.some(m=>m.phase==='octavos' && isPlayed(m)); }
+function octavosOrder(){
+  return (state.bracketOrder && Array.isArray(state.bracketOrder.octavos) && state.bracketOrder.octavos.length===8)
+    ? [...state.bracketOrder.octavos] : [0,1,2,3,4,5,6,7];
+}
+function saveOctavosOrder(order){
+  state.bracketOrder = state.bracketOrder || {};
+  state.bracketOrder.octavos = order;
+}
+function shuffleOctavos(){
+  if(!isAdmin) return;
+  if(octavosHasPlayed()){ alert('No se pueden mover o mezclar las llaves de Octavos porque ya hay un partido jugado.'); return; }
+  const order=octavosOrder();
+  for(let i=order.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [order[i],order[j]]=[order[j],order[i]]; }
+  saveOctavosOrder(order);
+  bracketMsg='Llaves de Octavos mezcladas. Los cruces A1-B8, A2-B7, etc. se mantienen; solo cambió su posición en el cuadro.';
+  persist(); renderBracket();
+}
+function moveOctavosSlot(index,dir){
+  if(!isAdmin) return;
+  if(octavosHasPlayed()){ alert('No se pueden mover las llaves de Octavos porque ya hay un partido jugado.'); return; }
+  const order=octavosOrder(), j=index+dir;
+  if(j<0||j>=order.length) return;
+  [order[index],order[j]]=[order[j],order[index]];
+  saveOctavosOrder(order); persist(); renderBracket();
+}
+function resetOctavosOrder(){
+  if(!isAdmin) return;
+  if(octavosHasPlayed()){ alert('No se puede cambiar el orden porque ya hay un partido jugado.'); return; }
+  saveOctavosOrder([0,1,2,3,4,5,6,7]);
+  bracketMsg='Orden de Octavos restablecido.'; persist(); renderBracket();
+}
+function octavosAdminTools(){
+  if(!isAdmin) return '';
+  const order=octavosOrder();
+  return `<div class="admin-only" style="margin-bottom:10px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+    <button class="btn small" onclick="generateOctavosFromGroups()">Generar cruces desde la Tabla</button>
+    <button class="btn small" onclick="shuffleOctavos()">Mezclar orden</button>
+    <button class="btn small ghost" onclick="resetOctavosOrder()">Orden original</button>
+    <span style="width:100%;font-size:.78rem;opacity:.8">A1-B8, A2-B7, A3-B6, etc. no cambian. Solo se mueve la llave completa.</span>
+    <div style="width:100%;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px">${order.map((slot,pos)=>`<div style="display:flex;align-items:center;gap:4px"><span style="min-width:58px">Llave ${slot+1}</span><button class="btn small ghost" onclick="moveOctavosSlot(${pos},-1)">↑</button><button class="btn small ghost" onclick="moveOctavosSlot(${pos},1)">↓</button></div>`).join('')}</div>
+  </div>`;
+}
+
+function shuffleQuarterPhase(ph){
+  if(!isAdmin) return;
+  if(phaseHasPlayed(ph)){ alert('No se puede modificar este cuadro porque ya hay un partido jugado en los Cuartos.'); return; }
+  const arr=[0,1,2,3].sort(()=>Math.random()-.5);
+  state.bracketOrder[ph]=arr;
+  syncBracket();
+  bracketMsg='Orden de '+(ph==='oro_cuartos'?'Cuartos de Oro':'Cuartos de Plata')+' mezclado aleatoriamente.'; persist(); renderBracket();
+}
+function moveQuarterSlot(ph,index,dir){
+  if(!isAdmin) return;
+  if(phaseHasPlayed(ph)){ alert('No se puede mover este cuadro porque ya hay un partido jugado en los Cuartos.'); return; }
+  const arr=[...(state.bracketOrder[ph]||[0,1,2,3])]; const j=index+dir;
+  if(j<0||j>=arr.length) return;
+  [arr[index],arr[j]]=[arr[j],arr[index]]; state.bracketOrder[ph]=arr; syncBracket(); persist(); renderBracket();
+}
+function quarterAdminTools(ph){
+  if(!isAdmin) return '';
+  const title=ph==='oro_cuartos'?'Cuartos de Oro':'Cuartos de Plata';
+  return `<div class="admin-only" style="margin-bottom:10px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+    <strong>${title}</strong>
+    <button class="btn small" onclick="shuffleQuarterPhase('${ph}')">Mezclar cruces</button>
+    ${[0,1,2,3].map(i=>`<span style="display:inline-flex;gap:2px"><button class="btn small ghost" onclick="moveQuarterSlot('${ph}',${i},-1)" title="Mover arriba">↑</button><button class="btn small ghost" onclick="moveQuarterSlot('${ph}',${i},1)" title="Mover abajo">↓</button></span>`).join('')}
+  </div>`;
 }
   
 function generateOctavosFromGroups(){
@@ -1238,11 +1319,11 @@ function renderBracket(){
   if(!el) return;
   const tab = BRACKET_TABS.find(t=>t.key===currentBracketPhase) || BRACKET_TABS[0];
   const nav = BRACKET_TABS.map(t=>`<button class="tab-btn${t.key===tab.key?' active':''}" style="font-size:.78rem" onclick="selectBracketPhase('${t.key}')">${t.label}</button>`).join('');
-  const tools = tab.key==='octavos'
-    ? `<div class="admin-only" style="margin-bottom:10px"><button class="btn small" onclick="generateOctavosFromGroups()">Generar cruces desde la Tabla</button></div>` : '';
+  const tools = tab.key==='octavos' ? octavosAdminTools() : '';
+  const extraTools = tab.key==='oro' ? quarterAdminTools('oro_cuartos') : tab.key==='plata' ? quarterAdminTools('plata_cuartos') : '';
   const msg = bracketMsg ? `<p class="empty">${esc(bracketMsg)}</p>` : '';
   const blocks = tab.blocks.map(([ph,title])=>`<p class="fase-h">${title}</p>${slotCards(ph)}`).join('');
-  el.innerHTML = `<nav style="margin:0 0 6px">${nav}</nav>${tools}${msg}${blocks}`;
+  el.innerHTML = `<nav style="margin:0 0 6px">${nav}</nav>${tools}${extraTools}${msg}${blocks}`;
 }
 function toggleFixtureForm(){
   const el = document.getElementById('fixture-form-fields');
