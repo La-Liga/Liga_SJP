@@ -77,6 +77,8 @@ body.admin-mode .actions.admin-only{display:flex;}
 body.admin-mode button.link.admin-only{display:inline;}
 .lock-note{color:var(--muted);font-size:.82rem;margin:0 0 14px;}
 body.admin-mode .lock-note{display:none;}
+.tf-act{display:none;}
+body.admin-mode .tf-act{display:table-cell;}
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:50;display:none;overflow-y:auto;padding:calc(env(safe-area-inset-top,0px) + 12px) 12px 28px;}
 .modal.open{display:block;}
 .modal .sheet{max-width:560px;margin:0 auto;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;}
@@ -1742,11 +1744,28 @@ function doTransfer(){
   msg.style.display='none';
   persist(); renderTeams(); renderTransfers(); fillTransferSelects();
 }
+function deleteTransfer(id){
+  if(!isAdmin) return;
+  const idx = state.transfers.findIndex(t=>t.id===id); if(idx<0) return;
+  const t = state.transfers[idx];
+  // Solo se puede revertir la última transferencia de ese jugador, si no el historial quedaría incoherente.
+  if(state.transfers.some((x,i)=>i>idx && x.player===t.player)){
+    alert('Este jugador tiene una transferencia posterior. Borrá primero la más reciente.'); return;
+  }
+  const p = state.players.find(x=>x.id===t.player);
+  const msg = p
+    ? `¿Borrar esta transferencia?\n\n${p.name} volverá a "${teamName(t.from)}".`
+    : '¿Borrar esta transferencia del historial?';
+  if(!confirm(msg)) return;
+  if(p && state.teams.some(x=>x.id===t.from)) p.team = t.from;
+  state.transfers.splice(idx,1);
+  persist(); renderTeams(); renderTransfers(); fillTransferSelects();
+}
 function renderTransfers(){
   const el = document.getElementById('transfers-list');
   const list = [...state.transfers].reverse();
-  el.innerHTML = list.length? `<div class="table-wrap"><table><thead><tr><th>Ventana</th><th>Jugador</th><th>De</th><th>A</th></tr></thead><tbody>
-    ${list.map(t=>`<tr><td>${esc(windowName(t.window))}</td><td class="team-a">${esc(playerName(t.player))}</td><td>${esc(teamName(t.from))}</td><td>${esc(teamName(t.to))}</td></tr>`).join('')}
+  el.innerHTML = list.length? `<div class="table-wrap"><table><thead><tr><th>Ventana</th><th>Jugador</th><th>De</th><th>A</th><th class="tf-act"></th></tr></thead><tbody>
+    ${list.map(t=>`<tr><td>${esc(windowName(t.window))}</td><td class="team-a">${esc(playerName(t.player))}</td><td>${esc(teamName(t.from))}</td><td>${esc(teamName(t.to))}</td><td class="tf-act"><button class="link danger" onclick="deleteTransfer('${t.id}')">Borrar</button></td></tr>`).join('')}
   </tbody></table></div>` : '<p class="empty">Sin transferencias registradas.</p>';
 }
 
