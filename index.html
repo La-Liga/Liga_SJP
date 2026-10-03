@@ -40,7 +40,7 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,B
 .wrap{max-width:720px;margin:0 auto;padding:20px 16px 48px;}
 h1{font-size:1.4rem;font-weight:700;margin:4px 0 2px;}
 .sub{color:var(--muted);font-size:.85rem;margin:0 0 14px;}
-nav{dis:flex;gap:6px;border-bottom:1px solid var(--border);margin-bottom:18px;overflow-x:auto;}
+nav{display:flex;gap:6px;border-bottom:1px solid var(--border);margin-bottom:18px;overflow-x:auto;}
 nav button{background:none;border:none;color:var(--muted);font-size:.88rem;font-weight:600;padding:10px 4px;margin-right:12px;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;}
 nav button.active{color:var(--primary);border-bottom-color:var(--primary);}
 .panel{display:none;}
@@ -52,6 +52,7 @@ label{display:block;font-size:.75rem;color:var(--muted);margin-bottom:4px;}
 input,select{width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-size:.9rem;margin-bottom:10px;}
 .full{grid-column:1/-1;}
 .btn{background:var(--primary);color:var(--primary-text);border:none;border-radius:8px;padding:10px 16px;font-size:.9rem;font-weight:600;cursor:pointer;}
+.btn:disabled{opacity:.5;cursor:not-allowed;}
 .btn.ghost{background:none;border:1px solid var(--border);color:var(--text);}
 .btn.small{padding:6px 10px;font-size:.78rem;}
 .row{display:flex;gap:8px;align-items:flex-start;}
@@ -120,7 +121,10 @@ sup{font-size:.7em;color:var(--muted);margin-left:2px;}
       <p class="sub">Equipos, jugadores, partidos y posiciones de la liga</p>
       <p class="empty" id="sync-status">🔄 Conectando...</p>
     </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
+    <button id="install-btn" class="btn small" style="display:none" onclick="installApp()">📲 Instalar app</button>
     <button onclick="toggleSettingsPanel()" title="Configuración" style="background:var(--surface);border:1px solid var(--border);border-radius:50%;width:44px;height:44px;font-size:1.2rem;cursor:pointer;flex-shrink:0">⚙️</button>
+    </div>
   </div>
 
   <div id="settings-panel" style="display:none">
@@ -420,7 +424,7 @@ const PHASES = {
   grupos:'Fase de grupos', octavos:'Octavos de final',
   oro_cuartos:'Copa de Oro — Cuartos de final', oro_semi:'Copa de Oro — Semifinales', oro_final:'Copa de Oro — Final', oro_tercer:'Copa de Oro — 3ª posición',
   oro_clas_cuartos:'Clasificación 5º-8º — Semifinales', oro_5to:'Partido por el 5º puesto', oro_7mo:'Partido por el 7º puesto',
-  plata_cuartos:'Copa de Plata — Cuartos de final', plata_semi:'Copa de Plata — Semifinales', plata_final:'Copa de Plata — Final', plata_tercer:'Copa de Plata — 3ª/4ª posición'
+  plata_cuartos:'Copa de Plata — Cuartos de final', plata_semi:'Copa de Plata — Semifinales', plata_final:'Copa de Plata — Final', plata_tercer:'Copa de Plata — 3ª/4ª posición', recopa:'Recopa'
 };
 const ORO_ORDER = ['oro_cuartos','oro_semi','oro_final','oro_tercer','oro_clas_cuartos','oro_5to','oro_7mo'];
 const PLATA_ORDER = ['plata_cuartos','plata_semi','plata_final','plata_tercer'];
@@ -539,39 +543,6 @@ function toggleSettingsPanel(){
   if(!el) return;
   el.style.display = el.style.display==='none' ? 'block' : 'none';
   if(el.style.display==='block') renderSettingsPanel();
-}
-  // ---- Gestión del Reglamento PDF ----
-function uploadReglamento() {
-    const fileInput = document.getElementById('r-file');
-    const file = fileInput.files[0];
-
-    if (!file) {
-        alert("Por favor, selecciona un archivo PDF primero.");
-        return;
-    }
-
-    const storageRef = firebase.storage().ref('reglamentos/' + file.name);
-    const uploadTask = storageRef.put(file);
-
-    uploadTask.on('state_changed', 
-        (snapshot) => {
-            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-            console.log('Subida: ' + Math.round(progress) + '%');
-        }, 
-        (error) => {
-            console.error("Error al subir a Storage:", error);
-            alert("Hubo un error al subir el archivo.");
-        }, 
-        () => {
-            uploadTask.snapshot.ref.getDownloadURL().then((downloadURL) => {
-                firebase.database().ref('reglamentos/dataUrl').set(downloadURL)
-                    .then(() => {
-                        alert("¡Reglamento subido y actualizado con éxito!");
-                        fileInput.value = '';
-                    });
-            });
-        }
-    );
 }
 function renderSettingsPanel(){
   const sel = document.getElementById('settings-team-select');
@@ -731,7 +702,39 @@ function renderTeams(){
 }
 
 // ---- players (per-team, dentro del acordeón de Equipos) ----
-let editingPlayerId = null, dupConfirmed = false;
+let editingPlayerId = null;
+// Devuelve el jugador (de otro equipo) que ya figura con ese documento o nombre.
+// Con el mismo documento siempre es la misma persona. Con el mismo nombre solo se
+// bloquea si no se puede comprobar lo contrario (falta algún documento).
+function findPlayerInOtherTeam(teamId, name, documentValue){
+  const nName = norm(name), nDoc = norm(documentValue);
+  if(!nName && !nDoc) return null;
+  return state.players.find(p=>{
+    if(p.id===editingPlayerId || p.team===teamId) return false;
+    if(nDoc && p.document && norm(p.document)===nDoc) return true;
+    if(nName && norm(p.name)===nName) return !(nDoc && p.document && norm(p.document)!==nDoc);
+    return false;
+  }) || null;
+}
+function checkPlayerConflict(teamId){
+  const nameEl = document.getElementById('rp-name-'+teamId);
+  const docEl = document.getElementById('rp-document-'+teamId);
+  const warn = document.getElementById('rp-dup-'+teamId);
+  const btn = document.getElementById('rp-save-'+teamId);
+  if(!nameEl || !docEl) return null;
+  const dup = findPlayerInOtherTeam(teamId, nameEl.value, docEl.value);
+  if(warn){
+    if(dup){
+      warn.textContent = `⛔ Este jugador ya pertenece al equipo "${teamName(dup.team)}". No se puede guardar en otro equipo; si corresponde a un pase, debe hacerse desde Transferencias.`;
+      warn.style.color = 'var(--danger)';
+      warn.style.display = 'block';
+    } else {
+      warn.style.display = 'none';
+    }
+  }
+  if(btn) btn.disabled = !!dup;
+  return dup;
+}
 function rosterHtml(teamId){
   const players = state.players.filter(p=>p.team===teamId);
   const list = players.length ? `<div class="table-wrap"><table><thead><tr><th>Jugador</th><th>Nacimiento</th><th>Documento</th><th></th></tr></thead><tbody>
@@ -742,13 +745,13 @@ function rosterHtml(teamId){
     <div style="margin-top:10px">
       <p class="empty" id="rp-title-${teamId}" style="font-weight:700;color:var(--text)">Agregar jugador</p>
       <div class="grid">
-        <div class="full"><label>Nombre</label><input id="rp-name-${teamId}"></div>
+        <div class="full"><label>Nombre</label><input id="rp-name-${teamId}" oninput="checkPlayerConflict('${teamId}')"></div>
         <div><label>Fecha de nacimiento</label><input type="date" id="rp-birthdate-${teamId}"></div>
-        <div><label>Documento</label><input id="rp-document-${teamId}"></div>
+        <div><label>Documento</label><input id="rp-document-${teamId}" oninput="checkPlayerConflict('${teamId}')"></div>
       </div>
       <p class="empty" id="rp-dup-${teamId}" style="display:none"></p>
       <div class="row">
-        <button class="btn small" onclick="savePlayerFor('${teamId}')">Guardar</button>
+        <button class="btn small" id="rp-save-${teamId}" onclick="savePlayerFor('${teamId}')">Guardar</button>
         <button class="btn ghost small" id="rp-cancel-${teamId}" style="display:none" onclick="cancelPlayerEditFor('${teamId}')">Cancelar</button>
       </div>
     </div>` : '';
@@ -769,44 +772,35 @@ function savePlayerFor(teamId){
   const nameEl = document.getElementById('rp-name-'+teamId);
   const name = nameEl.value.trim();
   if(!name) return;
-  const documentValue = document.getElementById('rp-document-'+teamId).value.trim();
-  const dupDoc = documentValue ? state.players.find(p=>p.id!==editingPlayerId && p.document && norm(p.document)===norm(documentValue)) : null;
-  const dupName = state.players.find(p=>p.id!==editingPlayerId && norm(p.name)===norm(name));
-  const dup = dupDoc || dupName;
-  const warn = document.getElementById('rp-dup-'+teamId);
-  if(dup && dup.team!==teamId && !dupConfirmed){
-    const motivo = dupDoc ? 'con ese documento' : 'con ese nombre';
-    warn.textContent = `⚠ Este jugador ya figura en el club "${teamName(dup.team)}" ${motivo}. Si corresponde a una transferencia, debe realizarse desde Transferencias. Tocá "Guardar" de nuevo solo si verificaste que no es el mismo jugador.`;
-    warn.style.display='block';
-    dupConfirmed = true;
-    return;
-  }
-  warn.style.display='none';
+  if(checkPlayerConflict(teamId)) return;
   const data = {name, team:teamId, birthdate:document.getElementById('rp-birthdate-'+teamId).value, document:document.getElementById('rp-document-'+teamId).value.trim()};
   if(editingPlayerId){ Object.assign(state.players.find(x=>x.id===editingPlayerId), data); }
   else{ state.players.push({id:'p'+Date.now(), ...data}); }
   persist();
-  editingPlayerId = null; dupConfirmed = false;
+  editingPlayerId = null;
   renderTeams();
   const body = document.getElementById('team-body-'+teamId); if(body) body.style.display='block';
   const chev = document.getElementById('chev-'+teamId); if(chev) chev.textContent='▴';
 }
 function cancelPlayerEditFor(teamId){
-  editingPlayerId = null; dupConfirmed = false;
+  editingPlayerId = null;
   ['rp-name','rp-birthdate','rp-document'].forEach(pfx=>{ const e=document.getElementById(pfx+'-'+teamId); if(e) e.value=''; });
   const warn = document.getElementById('rp-dup-'+teamId); if(warn) warn.style.display='none';
+  const saveBtn = document.getElementById('rp-save-'+teamId); if(saveBtn) saveBtn.disabled=false;
   const title = document.getElementById('rp-title-'+teamId); if(title) title.textContent='Agregar jugador';
   const cancelBtn = document.getElementById('rp-cancel-'+teamId); if(cancelBtn) cancelBtn.style.display='none';
 }
 function editPlayerInline(id){
   const p = state.players.find(x=>x.id===id); if(!p) return;
   if(!canEditTeam(p.team)) return;
-  editingPlayerId = id; dupConfirmed = false;
+  if(!document.getElementById('rp-name-'+p.team)) return;
+  editingPlayerId = id;
   document.getElementById('rp-name-'+p.team).value = p.name;
   document.getElementById('rp-birthdate-'+p.team).value = p.birthdate||'';
   document.getElementById('rp-document-'+p.team).value = p.document||'';
   document.getElementById('rp-title-'+p.team).textContent = 'Editar jugador';
   document.getElementById('rp-cancel-'+p.team).style.display = 'inline-block';
+  checkPlayerConflict(p.team);
 }
 function deletePlayer(id){
   const p = state.players.find(x=>x.id===id); if(!p) return;
@@ -1079,7 +1073,6 @@ function updatePhaseDate(phase, value){
     assigned[ph]=d.toISOString().slice(0,10);
   });
 
-  const destino = newOrder.indexOf(phase)+1;
   if(!confirm(`¿Mover ${phase==='interserial'?'la fecha Interserial':phase.replace('fecha_','la Fecha ')} a ${fmtDate(value)}? Las jornadas que queden en medio se desplazarán una posición.`)) return;
 
   order.forEach(ph=>phaseMatches(ph).forEach(m=>{ m.date=assigned[ph] || m.date; }));
@@ -1390,44 +1383,6 @@ function generateOctavosFromGroups(){
   persist();
   renderBracket();
 }
-  function generateInterserialFromGroups() {
-    if(!isAdmin) return;
-    
-    // Obtener los equipos de los grupos A y B
-    const a = computeStandings('A');
-    const b = computeStandings('B');
-    
-    if(a.length === 0 || b.length === 0) {
-        bracketMsg = 'Hacen falta equipos en Grupo A y Grupo B para generar el interserial.';
-        renderBracket();
-        return;
-    }
-
-    // Mezclar aleatoriamente ambos grupos
-    const aShuffled = [...a].sort(() => Math.random() - 0.5);
-    const bShuffled = [...b].sort(() => Math.random() - 0.5);
-    
-    const max = Math.max(aShuffled.length, bShuffled.length);
-
-    // Crear los enfrentamientos interserial
-    for(let i = 0; i < max; i++) {
-        const teamA = aShuffled[i % aShuffled.length];
-        const teamB = bShuffled[i % bShuffled.length];
-
-        state.matches.push({
-            id: 'm' + Date.now() + Math.random().toString(36).slice(2, 7),
-            date: '',
-            time: '',
-            home: teamA.id || teamA,
-            away: teamB.id || teamB,
-            phase: 'interserial'
-        });
-    }
-
-    bracketMsg = '¡Fecha Interserial generada con éxito!';
-    if (typeof saveState === 'function') saveState();
-    renderBracket();
-}
 let octavosConfirm = false;
 function renderBracket(){
   const el = document.getElementById('bracket-view');
@@ -1439,10 +1394,6 @@ function renderBracket(){
   const msg = bracketMsg ? `<p class="empty">${esc(bracketMsg)}</p>` : '';
   const blocks = tab.blocks.map(([ph,title])=>`<p class="fase-h">${title}</p>${slotCards(ph)}`).join('');
   el.innerHTML = `<nav style="margin:0 0 6px">${nav}</nav>${tools}${extraTools}${msg}${blocks}`;
-}
-function toggleFixtureForm(){
-  const el = document.getElementById('fixture-form-fields');
-  if(el) el.style.display = el.style.display==='none' ? 'block' : 'none';
 }
 function assignEliminationDates(){
   const baseMatch=state.matches.filter(m=>m.phase==='interserial' && m.date).sort((a,b)=>(a.date||'').localeCompare(b.date||''))[0];
@@ -1705,11 +1656,44 @@ function renderReglamento(){
       </div>
     </div>`).join('');
 }
+function saveBlob(blob, filename){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  // En Android hay que esperar antes de liberar la URL, si no la descarga falla.
+  setTimeout(()=>URL.revokeObjectURL(url), 60000);
+}
 function downloadReglamento(id){
   const doc = reglamentoData && reglamentoData[id]; if(!doc) return;
-  const a = document.createElement('a');
-  a.href = doc.dataUrl; a.download = doc.filename || 'reglamento.pdf';
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  try{
+    const parts = String(doc.dataUrl).split(',');
+    const bin = atob(parts[1] || '');
+    const bytes = new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+    saveBlob(new Blob([bytes], {type:'application/pdf'}), doc.filename || 'reglamento.pdf');
+  }catch(e){
+    window.open(doc.dataUrl, '_blank');
+  }
+}
+
+// ---- instalar como app (Android / Chrome) ----
+let deferredInstall = null;
+window.addEventListener('beforeinstallprompt', e=>{
+  e.preventDefault();
+  deferredInstall = e;
+  const b = document.getElementById('install-btn'); if(b) b.style.display = 'inline-block';
+});
+window.addEventListener('appinstalled', ()=>{
+  deferredInstall = null;
+  const b = document.getElementById('install-btn'); if(b) b.style.display = 'none';
+});
+async function installApp(){
+  if(!deferredInstall) return;
+  deferredInstall.prompt();
+  try{ await deferredInstall.userChoice; }catch(err){}
+  deferredInstall = null;
+  const b = document.getElementById('install-btn'); if(b) b.style.display = 'none';
 }
 
 // ---- transferencias ----
@@ -1831,24 +1815,11 @@ function buildWorkbook(){
   }
   return wb;
 }
-async function exportExcel(){
+function exportExcel(){
   const wb = buildWorkbook();
   const out = XLSX.write(wb, {bookType:'xlsx', type:'array'});
-  const blob = new Blob([out], {type:'application/octet-stream'});
-  let saved = false;
-  try{
-    if(window.claude && window.claude.use){
-      const dl = await window.claude.use('downloads');
-      if(dl){ await dl.save({filename:'liga-amateur.xlsx', data: blob}); saved = true; }
-    }
-  }catch(e){}
-  if(!saved){
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = 'liga-amateur.xlsx';
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }
+  const blob = new Blob([out], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  saveBlob(blob, 'liga-amateur.xlsx');
 }
 
 applyAdmin();
