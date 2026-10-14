@@ -222,7 +222,7 @@ sup{font-size:.7em;color:var(--muted);margin-left:2px;}
 
   <div class="card">
     <div class="row" style="justify-content:space-between;align-items:center">
-      <span style="font-size:.85rem;color:var(--muted)">Descargá equipos, jugadores, partidos, resultados, goleadores y clasificación</span>
+      <span style="font-size:.85rem;color:var(--muted)">Descargar equipos, jugadores, partidos, resultados, goleadores y clasificación</span>
       <button class="btn small" onclick="exportExcel()">Exportar a Excel</button>
     </div>
   </div>
@@ -1279,16 +1279,16 @@ function renderMatches(){
     if(ph==='octavos'){
       const ida=ms.filter(m=>m.leg!==2), vuelta=ms.filter(m=>m.leg===2);
       return `<div style="margin-top:14px">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><p class="fase-h" style="margin:0">Fecha 13 — Octavos ida <span class="empty">(${ida.length} partidos)</span></p>${adminDate}</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><p class="fase-h" style="margin:0">Fecha 13</p>${adminDate}</div>
         ${cards(ida)}
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px"><p class="fase-h" style="margin:0">Fecha 14 — Octavos vuelta <span class="empty">(${vuelta.length} partidos)</span></p></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px"><p class="fase-h" style="margin:0">Fecha 14</p></div>
         ${cards(vuelta)}
       </div>`;
     }
 
-    const eliminationRound={oro_cuartos:'Fecha 15 — Cuartos de final',plata_cuartos:'Fecha 15 — Cuartos de final',oro_semi:'Fecha 16 — Semifinales',plata_semi:'Fecha 16 — Semifinales',oro_final:'Fecha 17 — Finales',plata_final:'Fecha 17 — Finales',oro_tercer:'Fecha 17 — 3º puesto',oro_5to:'Fecha 17 — 5º puesto',oro_7mo:'Fecha 17 — 7º puesto',plata_tercer:'Fecha 17 — 3º puesto'};
-    const nombreFecha=eliminationRound[ph] || (ph==='interserial'?'Fecha 12 — Interserial' : ph==='grupos' ? 'Fase de grupos — partidos recuperados' : `Fecha ${index+1}`);
-    return `<div style="margin-top:14px"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><p class="fase-h" style="margin:0">${nombreFecha} <span class="empty">(${ms.length} partidos)</span></p>${adminDate}</div>${cards(ms)}</div>`;
+    const eliminationRound={oro_cuartos:'Fecha 15',plata_cuartos:'Fecha 15',oro_semi:'Fecha 16',plata_semi:'Fecha 16',oro_final:'Fecha 17',plata_final:'Fecha 17',oro_tercer:'Fecha 17',oro_5to:'Fecha 17',oro_7mo:'Fecha 17',plata_tercer:'Fecha 17'};
+    const nombreFecha=eliminationRound[ph] || (ph==='interserial'?'Fecha 12' : `Fecha ${index+1}`);
+    return `<div style="margin-top:14px"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><p class="fase-h" style="margin:0">${nombreFecha}</p>${adminDate}</div>${cards(ms)}</div>`;
   }).join('') + (list.some(m=>m.protest)?'<p class="empty">* Partido protestado</p>':'');
 }
 // ---- pestaña Resultados: agrupados por fase, como en la app de referencia ----
@@ -1313,7 +1313,7 @@ function renderResultados(){
   const sinFecha = played.filter(m=>!m.date);
   const blocks = dates.map((date,idx)=>{
     const ms=played.filter(m=>(m.date||'')===date).sort((a,b)=>(a.time||'99:99').localeCompare(b.time||'99:99') || String(a.id).localeCompare(String(b.id)));
-    return `<div style="margin-top:14px"><p class="fase-h">Fecha ${idx+1} — ${fmtDate(date)} <span class="empty">(${ms.length} resultados)</span></p>${ms.map(resultRow).join('')}</div>`;
+    return `<div style="margin-top:14px"><p class="fase-h">Fecha ${idx+1}</p>${ms.map(resultRow).join('')}</div>`;
   });
   if(sinFecha.length) blocks.push(`<div style="margin-top:14px"><p class="fase-h">Resultados sin fecha</p>${sinFecha.map(resultRow).join('')}</div>`);
   el.innerHTML=blocks.join('') + (played.some(m=>m.protest)?'<p class="empty">* Partido protestado</p>':'');
