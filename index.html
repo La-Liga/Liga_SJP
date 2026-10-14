@@ -17,14 +17,14 @@
   --danger:#B3452C; --pending:#B4791F; --radius:10px;
 }
 /* Forzar contenedor de pestañas con scroll horizontal */
-div[style*="display: flex"], .menu-tabs, nav, .nav-tabs {
+.menu-tabs, nav, .nav-tabs {
     overflow-x: auto !important;
     white-space: nowrap !important;
     -webkit-overflow-scrolling: touch;
 }
 html{scroll-padding-top:env(safe-area-inset-top,0px);}
 @media (prefers-color-scheme: dark){
-  :root:not([data-theme="light"]){
+  :root:not([data-theme]){
     --bg:#10140F; --surface:#1A211A; --border:#2C362B; --text:#EDEFE8;
     --muted:#9AA394; --primary:#4FAE68; --primary-text:#0B140C;
     --danger:#E17A5C; --pending:#E0B15C;
@@ -113,6 +113,25 @@ sup{font-size:.7em;color:var(--muted);margin-left:2px;}
 .tiegrid .th{font-size:.68rem;color:var(--muted);text-align:center;font-weight:700;text-transform:uppercase;}
 .tiegrid .score{text-align:center;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:700;}
 .tie-actions{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;}
+
+:root[data-theme="blue"]{color-scheme:dark;--bg:#0f172a;--surface:#1e293b;--border:#334155;--text:#e2e8f0;--muted:#94a3b8;--primary:#fbbf24;--primary-text:#172033;--danger:#fb927c;--pending:#fbbf24;}
+:root[data-theme="black"]{color-scheme:dark;--bg:#080808;--surface:#191919;--border:#383838;--text:#f5f5f5;--muted:#aaa;--primary:#86c8ff;--primary-text:#101010;--danger:#ff938a;--pending:#ffd479;}
+:root[data-theme="white"]{color-scheme:light;--bg:#f5f6f7;--surface:#fff;--border:#dadfe3;--text:#102a33;--muted:#626d72;--primary:#00639b;--primary-text:#fff;--danger:#ba2545;--pending:#906200;}
+.club-badge{width:26px;height:29px;object-fit:contain;vertical-align:middle;margin-right:7px;flex-shrink:0;}
+.bracket-rounds{display:flex;overflow-x:auto;gap:6px;padding:8px;background:var(--bg);border-radius:12px;margin:12px 0;}
+.bracket-rounds button{white-space:nowrap;flex-shrink:0;}
+.bracket-rounds .active{background:var(--surface);color:var(--primary);border-color:var(--primary);}
+.bracket-pair{position:relative;padding:0 30px;margin:20px 0 28px;display:grid;gap:8px;}
+.bracket-pair.connected:after{content:'';position:absolute;right:14px;top:25%;bottom:25%;width:16px;border:1px solid var(--border);border-left:0;border-radius:0 8px 8px 0;pointer-events:none;}
+.bracket-pair .bcard,.bracket-pair .tiecard{margin:0;border:0;background:color-mix(in srgb,var(--primary) 8%,var(--surface));min-width:0;}
+.bracket-pair:nth-child(even) .bcard,.bracket-pair:nth-child(even) .tiecard{background:var(--bg);}
+.bracket-item{position:relative;min-width:0;}
+.bracket-arrow{position:absolute;z-index:1;right:-29px;top:calc(50% - 16px);width:28px;height:32px;padding:0;border:0;border-radius:7px;background:var(--border);color:var(--text);font-size:24px;cursor:pointer;}
+.bracket-arrow.previous{left:-29px;right:auto;}
+.brow>span:first-child{display:flex;align-items:center;min-width:0;overflow-wrap:anywhere;}
+.tiegrid{grid-template-columns:minmax(0,1fr) 32px 38px 38px;gap:2px;}
+.badge-review{max-width:80px;max-height:80px;object-fit:contain;}
+@media(max-width:420px){.wrap{padding-left:10px;padding-right:10px}.bracket-pair{padding:0 26px}.bracket-pair .bcard,.bracket-pair .tiecard{padding:10px 8px}.tiegrid{font-size:.75rem}.bracket-pair .club-badge{width:20px;margin-right:4px}}
 </style>
 </head>
 <body>
@@ -131,6 +150,8 @@ sup{font-size:.7em;color:var(--muted);margin-left:2px;}
 
   <div id="settings-panel" style="display:none">
     <div class="card">
+      <label for="app-theme">Temas</label>
+      <select id="app-theme" onchange="setAppTheme(this.value)"><option value="white">Blanco</option><option value="original">Verde</option><option value="blue">Azul grisáceo</option><option value="black">Negro</option></select>
       <h2>Administrador</h2>
       <div id="admin-locked">
         <label>Contraseña de administrador</label>
@@ -141,6 +162,19 @@ sup{font-size:.7em;color:var(--muted);margin-left:2px;}
         <span class="badge ok">Administrador</span>
         <button class="link" onclick="toggleChangePass()">Cambiar contraseña</button>
         <button class="link danger" onclick="logout()">Salir</button>
+        <!-- INICIO BOTON RESETEAR: borrar esta línea del botón para retirarlo -->
+        <button id="reset-tournament-btn" class="btn small ghost" onclick="resetTournamentData()">Resetear datos del torneo</button>
+        <!-- FIN BOTON RESETEAR -->
+        <details><summary>Cuentas de delegados · insignias directas</summary>
+          <p class="empty">Creá una cuenta por delegado y asignale su club. Luego podrá publicar su insignia sin aprobación.</p>
+          <label>Club<select id="delegate-club"></select></label>
+          <label>Correo del delegado<input id="delegate-email" type="email" autocomplete="off"></label>
+          <label>Contraseña inicial (mínimo 8 caracteres)<input id="delegate-password" type="password" autocomplete="new-password"></label>
+          <button id="create-delegate-btn" class="btn small" onclick="createDelegateAccount()">Crear cuenta y vincular club</button>
+          <details><summary>Vincular una cuenta ya creada</summary><label>UID de Firebase Authentication<input id="delegate-uid" autocomplete="off"></label><button class="btn small ghost" onclick="linkExistingDelegate()">Vincular UID al club seleccionado</button></details>
+          <p id="delegate-admin-status" class="empty" role="status"></p><div id="delegate-accounts"></div>
+        </details>
+        <details><summary>Activar carga directa de insignias · Firebase</summary><p class="empty">Ingresá como administrador. Se mostrarán las reglas completas, conservando los permisos de tu captura y agregando acceso por club a las insignias. Copiá todo a Firebase → Realtime Database → Reglas y pulsá Publicar. Esto se hace una sola vez. Si modificaste las reglas después de esa captura, revisá los cambios antes de reemplazarlas.</p><button class="btn small ghost" onclick="copyBadgeRules()">Copiar reglas completas</button><pre id="badge-rules" style="white-space:pre-wrap;font-size:11px;overflow-wrap:anywhere"></pre></details>
         <div id="change-pass" style="display:none;margin-top:10px">
           <div class="row"><input type="password" id="new-pass" placeholder="Nueva contraseña"><button class="btn small" onclick="changePass()">Guardar</button></div>
         </div>
@@ -160,37 +194,36 @@ sup{font-size:.7em;color:var(--muted);margin-left:2px;}
     </div>
     <div class="card">
       <h2>Presidente / delegado de equipo</h2>
-      <div class="grid">
-        <div class="full"><label>Equipo</label><select id="settings-team-select"></select></div>
-        <div class="full"><label>Contraseña</label><input type="password" id="settings-team-pass"></div>
-      </div>
-      <button class="btn" onclick="settingsTeamLogin()">Ingresar</button>
-      <p class="empty" id="settings-team-msg" style="display:none"></p>
-      <div id="settings-unlocked-list" style="margin-top:10px"></div>
+      <label>Correo<input id="delegate-login-email" type="email" autocomplete="username"></label>
+      <label>Contraseña de la cuenta<input id="delegate-login-password" type="password" autocomplete="current-password"></label>
+      <button class="btn" onclick="delegateAccountLogin()">Ingresar con cuenta</button>
+      <button class="btn ghost" onclick="logout()">Cerrar sesión</button>
+      <p class="empty" id="delegate-session-status" role="status"></p>
+
     </div>
   </div>
 
   <div class="card">
     <div class="row" style="justify-content:space-between;align-items:center">
-      <span style="font-size:.85rem;color:var(--muted)">Descargá equipos, jugadores, partidos, goleadores y tabla</span>
+      <span style="font-size:.85rem;color:var(--muted)">Descargar equipos, jugadores, partidos, resultados, goleadores y clasificación</span>
       <button class="btn small" onclick="exportExcel()">Exportar a Excel</button>
     </div>
   </div>
 
   <nav>
-    <button class="tab-btn active" data-tab="equipos">Equipos</button>
-    <button class="tab-btn" data-tab="partidos">Partidos</button>
+    <button class="tab-btn active" data-tab="tabla">Clasificación</button>
     <button class="tab-btn" data-tab="resultados">Resultados</button>
-    <button class="tab-btn" data-tab="tabla">Tabla</button>
+    <button class="tab-btn" data-tab="partidos">Partidos</button>
     <button class="tab-btn" data-tab="disciplina">Disciplina</button>
     <button class="tab-btn" data-tab="eliminatorias">Eliminatorias</button>
     <button class="tab-btn" data-tab="goleadores">Goleadores</button>
-    <button class="tab-btn" data-tab="transferencias">Transferencias</button>
-    <button class="tab-btn" data-tab="reglamento">Reglamento</button>
+    <button class="tab-btn" data-tab="equipos">Equipos</button>
+    <button class="tab-btn" data-tab="transferencias">Transferencia</button>
+    <button class="tab-btn" data-tab="reglamento">Reglamentos</button>
   </nav>
 
   <!-- EQUIPOS -->
-  <div class="panel active" id="panel-equipos">
+  <div class="panel" id="panel-equipos">
     <div class="card" id="team-add-card" style="display:none">
       <button class="btn admin-only" onclick="toggleTeamForm()">+ Agregar equipo</button>
       <div id="team-form-fields" style="display:none">
@@ -199,7 +232,6 @@ sup{font-size:.7em;color:var(--muted);margin-left:2px;}
           <div><label>Nombre del equipo</label><input id="t-name"></div>
           <div><label>Teléfono</label><input id="t-phone"></div>
           <div class="full"><label>Email</label><input id="t-email"></div>
-          <div class="full"><label>Contraseña del equipo</label><input type="password" id="t-pin" placeholder="La usa el presidente para editar este equipo después"></div>
           <div class="full"><label>Grupo</label><select id="t-group"><option value="">Sin asignar</option><option value="A">Grupo A</option><option value="B">Grupo B</option></select></div>
         </div>
         <div class="row">
@@ -325,7 +357,7 @@ sup{font-size:.7em;color:var(--muted);margin-left:2px;}
   </div>
 
   <!-- TABLA -->
-  <div class="panel" id="panel-tabla">
+  <div class="panel active" id="panel-tabla">
     <div class="card"><h2>Tabla de posiciones</h2><div id="standings"></div></div>
   </div>
 </div>
@@ -451,6 +483,7 @@ const FEEDS = {
 const SYNC_ORDER = ['oro_cuartos','plata_cuartos','oro_semi','oro_clas_cuartos','plata_semi','oro_final','oro_tercer','oro_5to','oro_7mo','plata_final','plata_tercer'];
 const PHASE_SIZE = {octavos:8, oro_cuartos:4, plata_cuartos:4, oro_semi:2, oro_clas_cuartos:2, plata_semi:2, oro_final:1, oro_tercer:1, oro_5to:1, oro_7mo:1, plata_final:1, plata_tercer:1, recopa:1};
 state = normalizeState(state);
+let clubBadges={}, trustedDelegateTeam=null, delegateAccounts={};
 let reglamentoData = null;
 
 function persistLocal(){ try{ localStorage.setItem('liga-crm-data', JSON.stringify(state)); }catch(e){} }
@@ -535,6 +568,22 @@ function startSync(){
   };
   const cbRegl = snap=>{ reglamentoData = snap.val() || null; renderReglamento(); };
   const refRegl = fbDb2.ref('reglamentos');
+  const badgeRef=fbDb2.ref('liga-insignias');
+  const onBadges=snap=>{clubBadges=snap.val()||{};renderTeams();renderBracket();};
+  badgeRef.on('value',onBadges,()=>{});syncListeners.push([badgeRef,onBadges]);
+  const user=firebase.auth().currentUser;
+  if(user){
+    const accessRef=fbDb2.ref('liga-delegados'+(isAdmin?'':'/'+user.uid));
+    const sessionUid=user.uid;
+    const onAccess=snap=>{
+      if(firebase.auth().currentUser?.uid!==sessionUid)return;
+      if(isAdmin){delegateAccounts=snap.val()||{};trustedDelegateTeam=null;}
+      else{trustedDelegateTeam=snap.val()?.team||null;delegateAccounts={};}
+      renderDelegateAccess();renderTeams();renderSettingsPanel();
+    };
+    accessRef.on('value',onAccess,()=>{trustedDelegateTeam=null;document.getElementById('delegate-session-status').textContent='Acceso a insignias no habilitado. Revisá las reglas o la asignación de tu cuenta.';renderTeams();});
+    syncListeners.push([accessRef,onAccess]);
+  }
   fbRef.on('value', cbMain, onErr);            syncListeners.push([fbRef, cbMain]);
   fbPlayersRef.on('value', cbPlayers, onErr);  syncListeners.push([fbPlayersRef, cbPlayers]);
   refRegl.on('value', cbRegl, ()=>{});         syncListeners.push([refRegl, cbRegl]);
@@ -543,6 +592,7 @@ function startSync(){
 if(fbDb2){
   // Primero la sesión, después la lectura: así las reglas de la base (que exigen sesión) no rechazan la primera carga.
   firebase.auth().onAuthStateChanged(user=>{
+    trustedDelegateTeam=null;delegateAccounts={};renderDelegateAccess();
     if(!user){
       if(isAdmin){ isAdmin = false; applyAdmin(); }
       firebase.auth().signInAnonymously().catch(()=>{
@@ -589,8 +639,10 @@ function applyAdmin(){
   const addCard = document.getElementById('team-add-card');
   if(addCard) addCard.style.display = isAdmin ? 'block' : 'none';
   fillTransferSelects();
+  renderDelegateAccess();
   if(typeof renderTeams==='function' && document.getElementById('teams-list')) renderTeams();
   renderSettingsPanel();
+  renderDelegateAccess();
 }
 function toggleSettingsPanel(){
   const el = document.getElementById('settings-panel');
@@ -598,35 +650,7 @@ function toggleSettingsPanel(){
   el.style.display = el.style.display==='none' ? 'block' : 'none';
   if(el.style.display==='block') renderSettingsPanel();
 }
-function renderSettingsPanel(){
-  const sel = document.getElementById('settings-team-select');
-  if(!sel) return;
-  fillSelect('settings-team-select', state.teams.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('') || '<option value="">Sin equipos</option>');
-  const mine = state.teams.filter(t=>unlockedTeams.has(t.id));
-  const list = document.getElementById('settings-unlocked-list');
-  if(list){
-    list.innerHTML = mine.length ? `<p class="empty">Ingresado como presidente de: ${mine.map(t=>`${esc(t.name)} <button class="link" onclick="settingsTeamLogout('${t.id}')">(salir)</button>`).join(', ')}</p>` : '';
-  }
-}
-function settingsTeamLogin(){
-  const teamId = document.getElementById('settings-team-select').value;
-  const val = document.getElementById('settings-team-pass').value;
-  const msg = document.getElementById('settings-team-msg');
-  const t = state.teams.find(x=>x.id===teamId);
-  msg.style.display='block';
-  if(t && t.pin && val===t.pin){
-    unlockedTeams.add(teamId); saveUnlockedTeams();
-    document.getElementById('settings-team-pass').value='';
-    msg.style.color='var(--primary)'; msg.textContent=`Ingresaste como presidente de ${t.name}.`;
-    renderTeams(); renderSettingsPanel();
-  } else {
-    msg.style.color='var(--danger)'; msg.textContent='Contraseña incorrecta.';
-  }
-}
-function settingsTeamLogout(teamId){
-  unlockedTeams.delete(teamId); saveUnlockedTeams();
-  renderTeams(); renderSettingsPanel();
-}
+function renderSettingsPanel(){ renderDelegateAccess(); }
 function login(){
   const val = document.getElementById('admin-pass').value;
   const err = document.getElementById('admin-err');
@@ -676,18 +700,14 @@ document.querySelectorAll('.tab-btn').forEach(b=>{
 
 // ---- teams ----
 let editingTeamId = null;
-let unlockedTeams = new Set();
-try{ unlockedTeams = new Set(JSON.parse(sessionStorage.getItem('liga-team-unlocks')||'[]')); }catch(e){}
-function saveUnlockedTeams(){ try{ sessionStorage.setItem('liga-team-unlocks', JSON.stringify([...unlockedTeams])); }catch(e){} }
-function canEditTeam(id){ return isAdmin || unlockedTeams.has(id); }
+function canEditTeam(id){ return isAdmin || trustedDelegateTeam===id; }
 // El documento lo ve el administrador y cualquier delegado ingresado (por protestas y casos similares), no el público.
-function canSeeDocs(){ return isAdmin || unlockedTeams.size>0; }
+function canSeeDocs(){ return isAdmin || !!trustedDelegateTeam; }
 function canManageTeam(){ return isAdmin; }  // datos del equipo (nombre, contacto, grupo, clave) y borrado: solo administrador
 
 function saveTeam(){
   const name = document.getElementById('t-name').value.trim();
   if(!name) return;
-  const pin = document.getElementById('t-pin').value;
   const group = document.getElementById('t-group').value;
   const err = document.getElementById('t-err');
   err.style.display='none';
@@ -695,12 +715,9 @@ function saveTeam(){
   if(editingTeamId){
     const t = state.teams.find(x=>x.id===editingTeamId);
     t.name=name; t.phone=document.getElementById('t-phone').value.trim(); t.email=document.getElementById('t-email').value.trim(); t.group=group;
-    if(pin) t.pin = pin;
   } else {
-    if(!pin){ err.textContent='Elegí una contraseña para el equipo: la va a usar el presidente para editarlo después.'; err.style.display='block'; return; }
     const id = 't'+Date.now();
-    state.teams.push({id, name, phone:document.getElementById('t-phone').value.trim(), email:document.getElementById('t-email').value.trim(), pin, group});
-    unlockedTeams.add(id); saveUnlockedTeams();
+    state.teams.push({id, name, phone:document.getElementById('t-phone').value.trim(), email:document.getElementById('t-email').value.trim(), group});
   }
   persist(); cancelTeamEdit(); renderTeams();
 }
@@ -710,7 +727,7 @@ function toggleTeamForm(){
 }
 function cancelTeamEdit(){
   editingTeamId = null;
-  ['t-name','t-phone','t-email','t-pin'].forEach(id=>document.getElementById(id).value='');
+  ['t-name','t-phone','t-email'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('t-group').value='';
   document.getElementById('t-err').style.display='none';
   document.getElementById('team-form-title').textContent='Agregar equipo';
@@ -725,7 +742,6 @@ function editTeam(id){
   document.getElementById('t-name').value=t.name;
   document.getElementById('t-phone').value=t.phone;
   document.getElementById('t-email').value=t.email;
-  document.getElementById('t-pin').value='';
   document.getElementById('t-group').value=t.group||'';
   document.getElementById('team-form-title').textContent='Editar equipo';
   document.getElementById('t-cancel').style.display='inline-block';
@@ -737,7 +753,6 @@ function deleteTeam(id){
   if(!canManageTeam()) return;
   state.teams = state.teams.filter(x=>x.id!==id);
   state.matches = state.matches.filter(m=>m.home!==id && m.away!==id);
-  unlockedTeams.delete(id); saveUnlockedTeams();
   persist(); renderTeams();
 }
 function toggleTeamAccordion(id){
@@ -757,12 +772,13 @@ function renderTeams(){
       : '';
     return `<div class="card" style="padding:0;overflow:hidden;margin-bottom:10px">
       <div style="padding:14px 16px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px" onclick="toggleTeamAccordion('${t.id}')">
-        <div><span class="team-a">${esc(t.name)}</span> ${t.group?`<span class="badge ok">Grupo ${t.group}</span>`:''}</div>
+        <div><span class="team-a">${clubBadge(t.id)}${esc(t.name)}</span> ${t.group?`<span class="badge ok">Grupo ${t.group}</span>`:''}</div>
         <span id="chev-${t.id}" style="color:var(--muted)">▾</span>
       </div>
       <div id="team-body-${t.id}" style="display:none;padding:0 16px 16px;border-top:1px solid var(--border)">
         <p class="empty" style="margin-top:10px">Contacto: ${esc(t.phone||t.email)||'—'}</p>
         ${actions?`<div class="actions">${actions}</div>`:''}
+        ${canUploadBadge(t.id)?`<label>Insignia del club (PNG, JPG o WebP, hasta 5 MB)<input type="file" accept="image/png,image/jpeg,image/webp" onchange="uploadClubBadge('${t.id}',this)"></label><p class="empty">Se publica directamente para todos al terminar la carga.</p>`:''}
         ${rosterHtml(t.id)}
       </div>
     </div>`;
@@ -999,7 +1015,7 @@ function tieOutcome(ph, slot){
   let bGoals = (legs[0].home===b ? legs[0].hscore : legs[0].ascore) + (legs[1].home===b ? legs[1].hscore : legs[1].ascore);
   if(aGoals>bGoals) return {w:a,l:b};
   if(bGoals>aGoals) return {w:b,l:a};
-  const dec = matchOutcome(legs[1]);
+  const dec = hasPens(legs[1]) ? matchOutcome(legs[1]) : null;
   return dec ? dec : null;
 }
 function feedTeam(f, i){
@@ -1008,7 +1024,8 @@ function feedTeam(f, i){
   return f.take==='winner' ? o.w : o.l;
 }
 function sourceSlotFor(ph, pos){
-  const order = state.bracketOrder && Array.isArray(state.bracketOrder[ph]) ? state.bracketOrder[ph] : null;
+  const sourcePhase = FEEDS[ph]?.from;
+  const order = state.bracketOrder && Array.isArray(state.bracketOrder[sourcePhase]) ? state.bracketOrder[sourcePhase] : null;
   return order && order[pos]!=null ? order[pos] : pos;
 }
 function syncBracket(){
@@ -1021,8 +1038,8 @@ function syncBracket(){
         if(!a && !b) continue;
         state.matches.push({id:'m'+Date.now()+Math.random().toString(36).slice(2,7), date:'', time:'', home:a||null, away:b||null, hscore:null, ascore:null, hpen:null, apen:null, phase:ph, slot:i, protest:false});
       } else if(!isPlayed(m)){
-        if(a) m.home = a;
-        if(b) m.away = b;
+        m.home = a || null;
+        m.away = b || null;
       }
     }
   });
@@ -1305,7 +1322,7 @@ function bracketCard(m, llave){
   const played = isPlayed(m), o = matchOutcome(m), w = o ? o.w : null, pens = hasPens(m);
   const row = (id, sc, pen)=>{
     const bold = (id && id===w) ? 'b' : '';
-    return `<div class="brow"><span class="${id?'':'tbd'} ${bold}">${id?esc(teamName(id)):'Por definir'}</span><span class="${bold}">${played?sc:''}${pens?'<sup>('+pen+')</sup>':''}</span></div>`;
+    return `<div class="brow"><span class="${id?'':'tbd'} ${bold}">${id?clubBadge(id)+esc(teamName(id)):'Por definir'}</span><span class="${bold}">${played?sc:''}${pens?'<sup>('+pen+')</sup>':''}</span></div>`;
   };
   const meta = (m.date||m.time) ? `<div class="bmeta">${fmtDate(m.date)} ${esc(m.time||'')}</div>` : '';
   const tie = (played && m.hscore===m.ascore && !pens) ? '<div class="bmeta">Empate: falta cargar los penales para definir al ganador</div>' : '';
@@ -1332,8 +1349,8 @@ function octavosTieCard(slot){
     <div class="tiehead"><strong>Llave ${slot+1}</strong><span class="bstatus${winner?' done':''}">${status}</span></div>
     <div class="tiegrid">
       <div class="th">Equipo</div><div class="th">Ida</div><div class="th">Vuelta</div><div class="th">Global</div>
-      <div class="${winner===homeTeam?'b':''}">${homeTeam?esc(teamName(homeTeam)):'Por definir'}</div><div class="score">${scoreCell(idaHome)}</div><div class="score">${scoreCell(vueltaHome)}</div><div class="score">${complete?globalHome:'—'}</div>
-      <div class="${winner===awayTeam?'b':''}">${awayTeam?esc(teamName(awayTeam)):'Por definir'}</div><div class="score">${scoreCell(idaAway)}</div><div class="score">${scoreCell(vueltaAway)}</div><div class="score">${complete?globalAway:'—'}</div>
+      <div class="${winner===homeTeam?'b':''}">${homeTeam?clubBadge(homeTeam)+esc(teamName(homeTeam)):'Por definir'}</div><div class="score">${scoreCell(idaHome)}</div><div class="score">${scoreCell(vueltaHome)}</div><div class="score">${complete?globalHome:'—'}</div>
+      <div class="${winner===awayTeam?'b':''}">${awayTeam?clubBadge(awayTeam)+esc(teamName(awayTeam)):'Por definir'}</div><div class="score">${scoreCell(idaAway)}</div><div class="score">${scoreCell(vueltaAway)}</div><div class="score">${complete?globalAway:'—'}</div>
     </div>
     <div class="tie-actions">
       ${ida?`<button class="link admin-only" onclick="editMatch('${ida.id}')">Editar ida · ${esc(fmtDate(ida.date)||'sin fecha')}</button>`:''}
@@ -1367,6 +1384,7 @@ function octavosOrder(){
 function saveOctavosOrder(order){
   state.bracketOrder = state.bracketOrder || {};
   state.bracketOrder.octavos = order;
+  syncBracket();
 }
 function shuffleOctavos(){
   if(!isAdmin) return;
@@ -1457,16 +1475,35 @@ function generateOctavosFromGroups(){
   renderBracket();
 }
 let octavosConfirm = false;
+let bracketRounds = (()=>{try{return JSON.parse(localStorage.getItem('liga-bracket-rounds')||'{}');}catch(e){return {};}})();
+function selectBracketRound(ph){
+  const tab=BRACKET_TABS.find(t=>t.blocks.some(b=>b[0]===ph)); if(!tab)return;
+  currentBracketPhase=tab.key; bracketRounds[tab.key]=ph;
+  try{localStorage.setItem('liga-bracket-tab',tab.key);localStorage.setItem('liga-bracket-rounds',JSON.stringify(bracketRounds));}catch(e){}
+  renderBracket();
+}
+function connectedCards(ph){
+  const next=Object.keys(FEEDS).find(k=>FEEDS[k].from===ph && FEEDS[k].take==='winner');
+  const previous=FEEDS[ph]?.from;
+  const order=Array.from({length:PHASE_SIZE[ph]||1},(_,i)=>next?sourceSlotFor(next,i):i);
+  let html='';
+  for(let j=0;j<order.length;j+=2){
+    const slots=order.slice(j,j+2);
+    html+=`<div class="bracket-pair ${next&&slots.length===2?'connected':''}">${slots.map(slot=>`<div class="bracket-item">${previous?`<button class="bracket-arrow previous" aria-label="Ver ronda anterior" onclick="selectBracketRound('${previous}')">‹</button>`:''}${ph==='octavos'?octavosTieCard(slot):bracketCard(findSlot(ph,slot),null)}</div>`).join('')}${next?`<button class="bracket-arrow" aria-label="Ver ronda siguiente" onclick="selectBracketRound('${next}')">›</button>`:''}</div>`;
+  }
+  return html;
+}
 function renderBracket(){
-  const el = document.getElementById('bracket-view');
-  if(!el) return;
-  const tab = BRACKET_TABS.find(t=>t.key===currentBracketPhase) || BRACKET_TABS[0];
-  const nav = BRACKET_TABS.map(t=>`<button class="tab-btn${t.key===tab.key?' active':''}" style="font-size:.78rem" onclick="selectBracketPhase('${t.key}')">${t.label}</button>`).join('');
-  const tools = tab.key==='octavos' ? octavosAdminTools() : '';
-  const extraTools = tab.key==='oro' ? quarterAdminTools('oro_cuartos') : tab.key==='plata' ? quarterAdminTools('plata_cuartos') : tab.key==='recopa' ? recopaAdminTools() : '';
-  const msg = bracketMsg ? `<p class="empty">${esc(bracketMsg)}</p>` : '';
-  const blocks = tab.blocks.map(([ph,title])=>`<p class="fase-h">${title}</p>${slotCards(ph)}`).join('');
-  el.innerHTML = `<nav style="margin:0 0 6px">${nav}</nav>${tools}${extraTools}${msg}${blocks}`;
+  const el=document.getElementById('bracket-view'); if(!el)return;
+  const oldNav=el.querySelector('.bracket-cups')?.scrollLeft||0;
+  const tab=BRACKET_TABS.find(t=>t.key===currentBracketPhase)||BRACKET_TABS[0];
+  const selected=tab.blocks.find(b=>b[0]===bracketRounds[tab.key])||tab.blocks[0];
+  const nav=BRACKET_TABS.map(t=>`<button class="${t.key===tab.key?'active':''}" onclick="selectBracketPhase('${t.key}')">${t.label}</button>`).join('');
+  const rounds=tab.blocks.map(([ph,title])=>`<button class="btn small ghost ${ph===selected[0]?'active':''}" onclick="selectBracketRound('${ph}')">${title}</button>`).join('');
+  const tools=tab.key==='octavos'?octavosAdminTools():selected[0]==='oro_cuartos'?quarterAdminTools('oro_cuartos'):selected[0]==='plata_cuartos'?quarterAdminTools('plata_cuartos'):tab.key==='recopa'?recopaAdminTools():'';
+  el.innerHTML=`<nav class="bracket-cups">${nav}</nav><div class="bracket-rounds">${rounds}</div>${tools}${bracketMsg?`<p class="empty">${esc(bracketMsg)}</p>`:''}<div aria-label="${selected[1]}">${connectedCards(selected[0])}</div>`;
+  el.querySelector('.bracket-cups').scrollLeft=oldNav;
+  const active=el.querySelector('.bracket-rounds .active'); if(active)active.parentElement.scrollLeft=Math.max(0,active.offsetLeft-active.parentElement.offsetLeft-20);
 }
 function assignEliminationDates(){
   const baseMatch=state.matches.filter(m=>m.phase==='interserial' && m.date).sort((a,b)=>(a.date||'').localeCompare(b.date||''))[0];
@@ -1911,6 +1948,168 @@ function exportExcel(){
   const blob = new Blob([out], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
   saveBlob(blob, 'liga-amateur.xlsx');
 }
+
+// CONFIGURACION DE TEMAS, RESETEO E INSIGNIAS
+function setAppTheme(theme){
+  if(!['original','blue','black','white'].includes(theme))theme='original';
+  document.documentElement.dataset.theme=theme;
+  document.getElementById('app-theme').value=theme;
+  document.querySelector('meta[name="theme-color"]').content=({blue:'#0f172a',black:'#080808',white:'#ffffff',original:'#2F7A42'})[theme];
+  try{localStorage.setItem('liga-theme',theme);}catch(e){}
+}
+try{setAppTheme(localStorage.getItem('liga-theme')||'original');}catch(e){setAppTheme('original');}
+// INICIO FUNCION RESETEAR
+async function resetTournamentData(){
+  if(!isAdmin || !fbDb2 || !mainLoaded || !playersLoaded){alert('Ingresá como administrador y esperá la sincronización.');return;}
+  if(!confirm('Se borrarán partidos, resultados, goles, tarjetas, multas, sanciones, ventanas de pases, transferencias e historial de torneos. Se conservan clubes, jugadores, insignias y reglamentos. Se descargará un respaldo antes de borrar.'))return;
+  if(prompt('Para confirmar escribí RESETEAR')!=='RESETEAR')return;
+  const user=firebase.auth().currentUser;
+  if(!user || user.email?.toLowerCase()!==ADMIN_EMAIL)return;
+  const button=document.getElementById('reset-tournament-btn'); if(button)button.disabled=true;
+  try{
+    const snapshot=await fbRef.once('value'); const before=snapshot.val()||{};
+    const playerSnapshot=await fbPlayersRef.once('value');
+    saveBlob(new Blob([JSON.stringify({main:before,players:playerSnapshot.val()},null,2)],{type:'application/json'}),'respaldo-liga-'+Date.now()+'.json');
+    // Transacción: conserva los clubes de la versión más reciente. No escribe liga-players.
+    const result=await fbRef.transaction(current=>{
+      if(!current)return;
+      const kept=normalizeState({teams:current.teams||[],settings:{tournamentName:'Torneo actual'}});
+      delete kept.players;return kept;
+    });
+    if(!result.committed)throw new Error('No se encontraron datos para resetear.');
+    closeModal('match-modal');closeModal('detail-modal');
+    alert('Reseteo completado. Clubes y jugadores conservados.');
+  }catch(e){alert('No se pudo completar el reseteo: '+e.message);}
+  finally{if(button)button.disabled=false;}
+}
+// FIN FUNCION RESETEAR
+function validBadge(src){return typeof src==='string' && /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(src) && src.length<180000;}
+function clubBadge(id){const src=clubBadges[id]?.image || state.teams.find(t=>t.id===id)?.badge;return validBadge(src)?`<img class="club-badge" alt="" src="${src}">`:'<span class="club-badge" aria-hidden="true">🛡️</span>';}
+async function compressBadge(file){
+  if(!['image/png','image/jpeg','image/webp'].includes(file.type)||file.size>5*1024*1024)throw new Error('Elegí PNG, JPG o WebP de hasta 5 MB.');
+  const url=URL.createObjectURL(file);
+  try{
+    const img=new Image();img.src=url;await img.decode();
+    const scale=Math.min(1,160/img.width,160/img.height),canvas=document.createElement('canvas');
+    canvas.width=Math.max(1,Math.round(img.width*scale));canvas.height=Math.max(1,Math.round(img.height*scale));
+    canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
+    const src=canvas.toDataURL('image/png');if(!validBadge(src))throw new Error('La imagen es demasiado pesada. Probá otra.');return src;
+  }finally{URL.revokeObjectURL(url);}
+}
+function canUploadBadge(id){return isAdmin || trustedDelegateTeam===id;}
+async function uploadClubBadge(id,input){
+  const file=input.files?.[0];if(!file||!canUploadBadge(id))return;
+  input.disabled=true;
+  try{
+    const image=await compressBadge(file);if(!canUploadBadge(id))throw new Error('La sesión cambió. Volvé a ingresar.');
+    if(!fbDb2||!firebase.auth().currentUser)throw new Error('No hay conexión autenticada.');
+    await fbDb2.ref('liga-insignias/'+id).set({image,updatedAt:firebase.database.ServerValue.TIMESTAMP});
+    alert('Insignia publicada. Ya está disponible para todos.');
+  }catch(e){alert('No se pudo publicar la insignia. '+(e.code==='PERMISSION_DENIED'?'Revisá las reglas de Firebase y que tu cuenta esté vinculada a este club.':e.message));}
+  finally{input.disabled=false;input.value='';}
+}
+function renderDelegateAccess(){
+  if(typeof badgeRuleSnippet!=='undefined')renderBadgeRules();
+  const select=document.getElementById('delegate-club');
+  if(select)fillSelect('delegate-club',state.teams.map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join(''));
+  const session=document.getElementById('delegate-session-status');
+  const user=fbDb2?firebase.auth().currentUser:null;
+  if(session)session.textContent='';
+  const list=document.getElementById('delegate-accounts');if(!list)return;list.replaceChildren();if(!isAdmin)return;
+  Object.entries(delegateAccounts).forEach(([uid,account])=>{
+    const row=document.createElement('div');row.className='card';
+    const label=document.createElement('p');label.textContent=(account.email||uid)+' — '+teamName(account.team);row.append(label);
+    const button=document.createElement('button');button.className='link danger';button.textContent='Quitar acceso a insignias';
+    button.onclick=async()=>{if(!isAdmin||!confirm('¿Quitar acceso a insignias a esta cuenta?'))return;try{await fbDb2.ref('liga-delegados/'+uid).remove();}catch(e){alert('No se pudo quitar el acceso: '+e.message);}};
+    row.append(button);list.append(row);
+  });
+}
+async function delegateAccountLogin(){
+  const email=document.getElementById('delegate-login-email').value.trim();
+  const password=document.getElementById('delegate-login-password').value;
+  const status=document.getElementById('delegate-session-status');
+  if(!email||!password){status.textContent='Completá correo y contraseña.';return;}
+  try{if(!fbDb2)throw new Error('Sin conexión a Firebase.');await firebase.auth().signInWithEmailAndPassword(email,password);document.getElementById('delegate-login-password').value='';}
+  catch(e){status.textContent='No se pudo ingresar. Revisá el correo, la contraseña y la conexión.';}
+}
+async function createDelegateAccount(){
+  if(!isAdmin||!fbDb2)return;
+  const team=document.getElementById('delegate-club').value,email=document.getElementById('delegate-email').value.trim(),password=document.getElementById('delegate-password').value;
+  const status=document.getElementById('delegate-admin-status'),button=document.getElementById('create-delegate-btn');
+  if(!state.teams.some(t=>t.id===team)||!email||password.length<8){status.textContent='Elegí un club, completá un correo y una contraseña de al menos 8 caracteres.';return;}
+  button.disabled=true;let secondary=null,created=null,linked=false;
+  try{
+    // Instancia separada: crear al delegado no cierra la sesión del administrador.
+    secondary=firebase.initializeApp(firebaseConfig,'delegate-create-'+Date.now());
+    await secondary.auth().setPersistence(firebase.auth.Auth.Persistence.NONE);
+    created=(await secondary.auth().createUserWithEmailAndPassword(email,password)).user;
+    if(!isAdmin)throw new Error('La sesión de administrador cambió.');
+    await fbDb2.ref('liga-delegados/'+created.uid).set({team,email});linked=true;
+    document.getElementById('delegate-password').value='';
+    status.textContent='Cuenta creada y vinculada a '+teamName(team)+'. Entregá el correo y la contraseña al delegado. Las insignias se publican sin aprobación.';
+  }catch(e){
+    if(created&&!linked){try{await created.delete();}catch{status.textContent='Cuenta creada sin vinculación. UID: '+created.uid+'. Vinculala después de corregir las reglas.';return;}}
+    status.textContent=e.code==='auth/email-already-in-use'?'Ese correo ya tiene cuenta. Usá su UID en “Vincular una cuenta ya creada”.':'No se pudo crear o vincular la cuenta: '+e.message;
+  }finally{if(secondary){try{await secondary.auth().signOut();await secondary.delete();}catch{}}button.disabled=false;}
+}
+async function linkExistingDelegate(){
+  if(!isAdmin||!fbDb2)return;
+  const uid=document.getElementById('delegate-uid').value.trim(),team=document.getElementById('delegate-club').value,email=document.getElementById('delegate-email').value.trim();
+  const status=document.getElementById('delegate-admin-status');
+  if(!/^[A-Za-z0-9_-]{1,128}$/.test(uid)||!state.teams.some(t=>t.id===team)){status.textContent='Comprobá el UID y el club seleccionado.';return;}
+  if(!confirm('¿Vincular esta cuenta a '+teamName(team)+'? Verificá que el UID corresponde al delegado.'))return;
+  try{await fbDb2.ref('liga-delegados/'+uid).set({team,email});status.textContent='Cuenta vinculada.';}catch(e){status.textContent='No se pudo vincular: '+e.message;}
+}
+const badgeRuleSnippet={
+  "liga-delegados":{
+    ".read":"auth != null && auth.token.email === 'admin@liga-sjp.app'",
+    ".write":"auth != null && auth.token.email === 'admin@liga-sjp.app'",
+    "$uid":{
+      ".read":"auth != null && auth.uid === $uid",
+      ".validate":"newData.hasChildren(['team','email'])",
+      "team":{".validate":"newData.isString()"},
+      "email":{".validate":"newData.isString()"},
+      "$other":{".validate":false}
+    }
+  },
+  "liga-insignias":{
+    ".read":"auth != null",
+    "$club":{
+      ".write":"auth != null && (auth.token.email === 'admin@liga-sjp.app' || (auth.token.firebase.sign_in_provider === 'password' && root.child('liga-delegados').child(auth.uid).child('team').val() === $club))",
+      ".validate":"newData.hasChildren(['image','updatedAt'])",
+      "image":{".validate":"newData.isString() && newData.val().length < 180000 && newData.val().beginsWith('data:image/png;base64,')"},
+      "updatedAt":{".validate":"newData.isNumber() && newData.val() === now"},
+      "$other":{".validate":false}
+    }
+  }
+};
+function completeBadgeRules(){
+  const user=fbDb2?firebase.auth().currentUser:null;
+  if(!isAdmin||!user||user.email?.toLowerCase()!==ADMIN_EMAIL)return null;
+  const admin="auth != null && auth.uid === '"+user.uid+"'";
+  const additions=JSON.parse(JSON.stringify(badgeRuleSnippet));
+  additions['liga-delegados']['.read']=admin;
+  additions['liga-delegados']['.write']=admin;
+  additions['liga-insignias']['$club']['.write']="auth != null && (auth.uid === '"+user.uid+"' || (auth.token.firebase.sign_in_provider === 'password' && root.child('liga-delegados').child(auth.uid).child('team').val() === $club))";
+  return {rules:{'.read':false,'.write':false,
+    'liga-data':{'.read':'auth != null','.write':admin},
+    'liga-players':{'.read':'auth != null','.write':'auth != null','.validate':"newData.hasChild('v')"},
+    'reglamentos':{'.read':'auth != null','.write':admin},
+    ...additions
+  }};
+}
+function renderBadgeRules(){
+  const el=document.getElementById('badge-rules');if(!el)return;
+  const rules=completeBadgeRules();el.textContent=rules?JSON.stringify(rules,null,2):'Ingresá como administrador para generar las reglas con tu UID real.';
+}
+async function copyBadgeRules(){
+  const rules=completeBadgeRules();if(!rules){alert('Ingresá como administrador.');return;}
+  const text=JSON.stringify(rules,null,2);
+  try{await navigator.clipboard.writeText(text);alert('Reglas copiadas. Pegalas en Firebase → Realtime Database → Reglas y pulsá Publicar.');}
+  catch{const range=document.createRange();range.selectNodeContents(document.getElementById('badge-rules'));const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);alert('Seleccioné las reglas. Usá Copiar para copiarlas manualmente.');}
+}
+renderBadgeRules();
+
 
 applyAdmin();
 renderTeams();
