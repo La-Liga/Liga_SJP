@@ -188,10 +188,8 @@ sup{font-size:.7em;color:var(--muted);margin-left:2px;}
           <label>Correo del delegado<input id="delegate-email" type="email" autocomplete="off"></label>
           <label>Contraseña inicial (mínimo 8 caracteres)<input id="delegate-password" type="password" autocomplete="new-password"></label>
           <button id="create-delegate-btn" class="btn small" onclick="createDelegateAccount()">Crear cuenta y vincular club</button>
-          <details><summary>Vincular una cuenta ya creada</summary><label>UID de Firebase Authentication<input id="delegate-uid" autocomplete="off"></label><button class="btn small ghost" onclick="linkExistingDelegate()">Vincular UID al club seleccionado</button></details>
           <p id="delegate-admin-status" class="empty" role="status"></p><div id="delegate-accounts"></div>
         </details>
-        <details><summary>Activar carga directa de insignias · Firebase</summary><p class="empty">Ingresá como administrador. Se mostrarán las reglas completas, conservando los permisos de tu captura y agregando acceso por club a las insignias. Copiá todo a Firebase → Realtime Database → Reglas y pulsá Publicar. Esto se hace una sola vez. Si modificaste las reglas después de esa captura, revisá los cambios antes de reemplazarlas.</p><button class="btn small ghost" onclick="copyBadgeRules()">Copiar reglas completas</button><pre id="badge-rules" style="white-space:pre-wrap;font-size:11px;overflow-wrap:anywhere"></pre></details>
         <div id="change-pass" style="display:none;margin-top:10px">
           <div class="row"><input type="password" id="new-pass" placeholder="Nueva contraseña"><button class="btn small" onclick="changePass()">Guardar</button></div>
         </div>
@@ -222,7 +220,7 @@ sup{font-size:.7em;color:var(--muted);margin-left:2px;}
 
   <div class="card">
     <div class="row" style="justify-content:space-between;align-items:center">
-      <span style="font-size:.85rem;color:var(--muted)">Descargar equipos, jugadores, partidos, resultados, goleadores y clasificación</span>
+      <span style="font-size:.85rem;color:var(--muted)">Descargá equipos, jugadores, partidos, resultados, goleadores y clasificación</span>
       <button class="btn small" onclick="exportExcel()">Exportar a Excel</button>
     </div>
   </div>
