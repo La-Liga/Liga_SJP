@@ -532,35 +532,98 @@ try{
 function setSyncStatus(txt){ const st=document.getElementById('sync-status'); if(st) st.textContent=txt; }
 function cleanData(o){ return JSON.parse(JSON.stringify(o)); }
 
-function persist(){
-  persistLocal();
-  if(!fbDb2) return;
+function registrationPolicy(main){
+  const result={};
+  Object.values(main.teams||{}).forEach(t=>{
+    const played=Object.values(main.matches||{}).filter(m=>(m.home===t.id||m.away===t.id)&&isPlayed(m)).length;
+    result[t.id]=played<5;
+  });
+  return result;
+}
+function mainForSave(){
+  const main=cleanData(state);delete main.players;
+  // Conserva la ubicación antigua hasta completar la migración explícita.
+  if(!playersAreMigrated() && remoteMain?.players)main.players=cleanData(remoteMain.players);
+  main.registrationOpen=registrationPolicy(main);
+  return main;
+}
+function playersAreMigrated(){return remotePlayers?.v===2;}
+function requirePlayerStorage(){
+  if(!fbDb2||!mainLoaded||!playersLoaded||!playersAreMigrated()){
+    alert('Publicá las reglas nuevas y entrá como administrador para preparar la inscripción. Si existen jugadores anteriores, deben migrarse sin borrarlos.');return false;
+  }
+  return true;
+}
+async function persist(playerWrites={}){
+  if(!isAdmin||!fbDb2)return false;
+  if(Object.keys(playerWrites).length&&!requirePlayerStorage())return false;
   try{
-    const upd = {'liga-players': {v:1, list: cleanData(state.players||[])}};
-    if(isAdmin){
-      const main = cleanData(state); delete main.players;
-      upd['liga-data'] = main;
+    const upd={'liga-data':mainForSave(),...playerWrites};
+    await fbDb2.ref().update(upd);
+    persistLocal();return true;
+  }catch(e){
+    applyRemote();alert('No se pudieron guardar los cambios en Firebase: '+e.message);return false;
+  }
+}
+function playersFromStorage(value,fallback=[]){
+  if(value?.v===2)return Object.values(value.byId||{});
+  const list=value?.list ?? fallback;
+  return Array.isArray(list)?list.filter(Boolean):Object.values(list||{});
+}
+let playerStorageSetupRunning=false, playerStorageSetupAttempted=false;
+function emptyLegacyPlayerNode(value){
+  if(value==null)return true;
+  if(typeof value!=='object'||Array.isArray(value))return false;
+  if(Object.keys(value).some(key=>!['v','list'].includes(key)))return false;
+  if(value.v!=null&&value.v!==1)return false;
+  return playersFromStorage(value).length===0;
+}
+async function initializeEmptyPlayerStorage(){
+  if(!isAdmin||!fbDb2||!mainLoaded||!playersLoaded||playerStorageSetupRunning||playerStorageSetupAttempted)return;
+  playerStorageSetupRunning=true;playerStorageSetupAttempted=true;
+  const sessionUid=firebase.auth().currentUser?.uid;
+  try{
+    const [mainSnap,playersSnap]=await Promise.all([fbRef.once('value'),fbPlayersRef.once('value')]);
+    if(!isAdmin||firebase.auth().currentUser?.uid!==sessionUid)return;
+    const main=mainSnap.val()||{},currentPlayers=playersSnap.val();
+    if(currentPlayers?.v!==2){
+      if(playersFromStorage(null,main.players||[]).length || !emptyLegacyPlayerNode(currentPlayers)){
+        setSyncStatus('⚠ Hay datos anteriores de jugadores. Se conservaron; requieren migración antes de nuevas inscripciones.');return;
+      }
+      const result=await fbPlayersRef.transaction(current=>{
+        if(current?.v===2)return current;
+        // Si alguien agregó un jugador durante la preparación, no se sobrescribe.
+        if(!emptyLegacyPlayerNode(current))return;
+        return {v:2};
+      },undefined,false);
+      if(!result.committed){setSyncStatus('⚠ La lista de jugadores cambió. No se sobrescribió ningún dato.');return;}
     }
-    fbDb2.ref().update(upd).catch(()=>{});
-  }catch(e){}
+    if(!isAdmin||firebase.auth().currentUser?.uid!==sessionUid)return;
+    await fbRef.transaction(current=>{
+      const main=current||{};
+      main.registrationOpen=registrationPolicy(main);
+      return main;
+    },undefined,false);
+    setSyncStatus('✅ Sincronizado en tiempo real');
+  }catch(e){
+    setSyncStatus('⚠ No se pudo preparar la inscripción. Publicá las reglas nuevas de Firebase y recargá la app como administrador.');
+  }finally{playerStorageSetupRunning=false;}
 }
 
 // Junta lo que llega de los dos nodos y lo aplica a la app.
 function applyRemote(){
   if(!mainLoaded || !playersLoaded) return;
-  const hadLegacy = !!(remoteMain && ((remoteMain.players && remoteMain.players.length) || (remoteMain.settings && remoteMain.settings.adminPass)));
   const merged = Object.assign({}, remoteMain || {});
   if(remotePlayers){
-    const l = remotePlayers.list;
-    merged.players = Array.isArray(l) ? l : (l ? Object.values(l) : []);
+    merged.players=playersFromStorage(remotePlayers);
   }
   if(remoteMain || remotePlayers){
     state = normalizeState(merged);
     persistLocal();
     renderAll();
   }
-  // Migración automática (la hace el administrador): jugadores al nodo nuevo y borrar la contraseña vieja de la base.
-  if(isAdmin && (hadLegacy || (!remoteMain && !remotePlayers))) persist();
+  // Solo prepara automáticamente listas vacías; nunca borra jugadores existentes.
+  initializeEmptyPlayerStorage();
 }
 
 function stopSync(){
@@ -607,6 +670,7 @@ function startSync(){
 if(fbDb2){
   // Primero la sesión, después la lectura: así las reglas de la base (que exigen sesión) no rechazan la primera carga.
   firebase.auth().onAuthStateChanged(user=>{
+    playerStorageSetupAttempted=false;
     trustedDelegateTeam=null;delegateAccounts={};renderDelegateAccess();
     if(!user){
       if(isAdmin){ isAdmin = false; applyAdmin(); }
@@ -838,7 +902,7 @@ function rosterHtml(teamId){
   const players = state.players.filter(p=>p.team===teamId);
   const list = players.length ? `<div class="table-wrap"><table><thead><tr><th>Jugador</th><th>Nacimiento</th>${canSeeDocs()?'<th>Documento</th>':''}<th></th></tr></thead><tbody>
     ${players.map(p=>`<tr><td class="team-a">${esc(p.name)}</td><td>${p.birthdate||'—'}</td>${canSeeDocs()?`<td>${esc(p.document)||'—'}</td>`:''}
-      <td class="actions">${canEditTeam(p.team)?`<button class="link" onclick="editPlayerInline('${p.id}')">Editar</button>`:''}${canEditTeam(p.team)?`<button class="link danger" onclick="deletePlayer('${p.id}')">Borrar</button>`:''}</td></tr>`).join('')}
+      <td class="actions">${isAdmin?`<button class="link" onclick="editPlayerInline('${p.id}')">Editar</button>`:''}${isAdmin?`<button class="link danger" onclick="deletePlayer('${p.id}')">Borrar</button>`:''}</td></tr>`).join('')}
     </tbody></table></div>` : '<p class="empty">Sin jugadores cargados.</p>';
   const form = canEditTeam(teamId) ? `
     <div style="margin-top:10px">
@@ -855,31 +919,38 @@ function rosterHtml(teamId){
       </div>
     </div>` : '';
   const partidosJugadosEquipo = state.matches.filter(m => (m.home===teamId || m.away===teamId) && isPlayed(m)).length;
-  const formHabilitado = partidosJugadosEquipo >= 5
+  const formHabilitado = !isAdmin && partidosJugadosEquipo >= 5
     ? `<p style="color:#ff6b6b;font-size:13px;margin-top:8px">Inscripción cerrada: ${partidosJugadosEquipo} partidos disputados. No se pueden agregar jugadores nuevos.</p>`
     : form;
 
     return `<p class="empty" style="font-weight:700;color:var(--text);margin-top:12px">Plantel</p>${list}${formHabilitado}`;
 }
-function savePlayerFor(teamId){
-  if(!canEditTeam(teamId)) return;
-  const partidosJugadosEquipo = state.matches.filter(m => (m.home===teamId || m.away===teamId) && isPlayed(m)).length;
-  if(!editingPlayerId && partidosJugadosEquipo >= 5){
-    alert('Inscripción cerrada: este equipo ya disputó 5 o más partidos. No se pueden agregar jugadores nuevos.');
-    return;
-  }
-  const nameEl = document.getElementById('rp-name-'+teamId);
-  const name = nameEl.value.trim();
-  if(!name) return;
-  if(checkPlayerConflict(teamId)) return;
-  const data = {name, team:teamId, birthdate:document.getElementById('rp-birthdate-'+teamId).value, document:document.getElementById('rp-document-'+teamId).value.trim()};
-  if(editingPlayerId){ Object.assign(state.players.find(x=>x.id===editingPlayerId), data); }
-  else{ state.players.push({id:'p'+Date.now(), ...data}); }
-  persist();
-  editingPlayerId = null;
-  renderTeams();
-  const body = document.getElementById('team-body-'+teamId); if(body) body.style.display='block';
-  const chev = document.getElementById('chev-'+teamId); if(chev) chev.textContent='▴';
+async function savePlayerFor(teamId){
+  if(!canEditTeam(teamId)||!requirePlayerStorage())return;
+  if(editingPlayerId&&!isAdmin)return;
+  const matches=state.matches.filter(m=>(m.home===teamId||m.away===teamId)&&isPlayed(m));
+  if(!isAdmin&&matches.length>=5){alert('Inscripción cerrada: este equipo ya disputó 5 o más partidos.');return;}
+  const name=document.getElementById('rp-name-'+teamId).value.trim();
+  if(!name||checkPlayerConflict(teamId))return;
+  const id=editingPlayerId||fbPlayersRef.child('byId').push().key;
+  const data={id,name,team:teamId,birthdate:document.getElementById('rp-birthdate-'+teamId).value,document:document.getElementById('rp-document-'+teamId).value.trim()};
+  const button=document.getElementById('rp-save-'+teamId);button.disabled=true;
+  try{
+    // Una sola ficha por escritura: no se reemplaza el plantel de otros clubes.
+    if(editingPlayerId){
+      const result=await fbPlayersRef.child('byId/'+id).transaction(current=>{
+        if(!current||current.team!==teamId)return;
+        return {...current,...data};
+      },undefined,false);
+      if(!result.committed)throw new Error('El jugador fue borrado o transferido. Actualizá la vista.');
+    }else{
+      await fbPlayersRef.child('byId/'+id).set(data);
+    }
+    editingPlayerId=null;renderTeams();
+    const body=document.getElementById('team-body-'+teamId);if(body)body.style.display='block';
+    const chev=document.getElementById('chev-'+teamId);if(chev)chev.textContent='▴';
+  }catch(e){alert('No se guardó el jugador. '+(e.code==='PERMISSION_DENIED'?'Comprobá la cuenta asignada al club, la inscripción y la publicación de las reglas.':e.message));}
+  finally{button.disabled=false;}
 }
 function cancelPlayerEditFor(teamId){
   editingPlayerId = null;
@@ -890,6 +961,7 @@ function cancelPlayerEditFor(teamId){
   const cancelBtn = document.getElementById('rp-cancel-'+teamId); if(cancelBtn) cancelBtn.style.display='none';
 }
 function editPlayerInline(id){
+  if(!isAdmin)return;
   const p = state.players.find(x=>x.id===id); if(!p) return;
   if(!canEditTeam(p.team)) return;
   if(!document.getElementById('rp-name-'+p.team)) return;
@@ -901,17 +973,14 @@ function editPlayerInline(id){
   document.getElementById('rp-cancel-'+p.team).style.display = 'inline-block';
   checkPlayerConflict(p.team);
 }
-function deletePlayer(id){
-  const p = state.players.find(x=>x.id===id); if(!p) return;
-  if(!canEditTeam(p.team)) return;
-  const hasHistory = state.goals.some(g=>g.player===id) || state.cards.some(c=>c.player===id) || state.fines.some(f=>f.player===id);
-  if(!isAdmin && hasHistory){
-    alert('Este jugador tiene goles, tarjetas o multas cargados. Pedile al administrador que lo borre.');
-    return;
-  }
-  state.players = state.players.filter(x=>x.id!==id);
-  if(isAdmin) state.goals = state.goals.filter(g=>g.player!==id);
-  persist(); renderTeams();
+async function deletePlayer(id){
+  if(!isAdmin||!requirePlayerStorage())return;
+  if(!confirm('¿Borrar este jugador?'))return;
+  try{
+    await fbPlayersRef.child('byId/'+id).remove();
+    state.goals=state.goals.filter(g=>g.player!==id);
+    await persist();renderTeams();
+  }catch(e){alert('No se pudo borrar el jugador: '+e.message);}
 }
 
 // ---- gestión del ciclo de torneos ----
@@ -1705,15 +1774,35 @@ function renderCards(){
     if(!totals[c.player]) totals[c.player] = {amarillas:0, rojas:0};
     if(c.type==='Roja') totals[c.player].rojas++; else totals[c.player].amarillas++;
   });
-  const rows = Object.entries(totals).map(([pid,t])=>({pid, name:playerName(pid), team:teamName(playerTeam(pid)), ...t, ...suspensionInfo(pid,t.amarillas,t.rojas)}));
+  const rows = Object.entries(totals).map(([pid,t])=>({pid, name:playerName(pid), team:teamName(playerTeam(pid)), ...t, ...suspensionInfo(pid,t.amarillas,t.rojas)})).filter(r=>!disciplineResolved(r.pid,r.pending));
   const el = document.getElementById('cards-list');
   el.innerHTML = rows.length? `<p class="empty"></p><div class="table-wrap"><table><thead><tr><th>Jugador</th><th>Equipo</th><th class="num">🟨</th><th class="num">🟥</th><th>Estado</th><th class="num">Fechas pend.</th><th></th></tr></thead><tbody>
     ${rows.map(r=>`<tr><td class="team-a">${esc(r.name)}</td><td>${esc(r.team)}</td><td class="num">${r.amarillas||'—'}</td><td class="num">${r.rojas||'—'}</td>
       <td><span class="badge ${r.pending>0?'pending':'ok'}">${r.pending>0?'Suspendido':'Habilitado'}</span></td>
       <td class="num">${isAdmin?`<input type="number" min="0" id="pend-${r.pid}" value="${r.pending}" style="width:54px;margin-bottom:0" onchange="setPendingSuspension('${r.pid}',${r.total})">`:(r.pending||'—')}</td>
-      <td class="actions admin-only">${r.pending>0?`<button class="link" onclick="serveSuspension('${r.pid}')">-1 fecha</button>`:''}</td>
+      <td class="actions admin-only">${isAdmin?(r.pending>0?`<button class="link" onclick="serveSuspension('${r.pid}')">-1 fecha</button>`:hasUnpaidFine(r.pid)?'<span class="empty">Multa pendiente</span>':`<button class="link danger" onclick="resolveDiscipline('${r.pid}')">Quitar de la lista</button>`):''}</td>
     </tr>`).join('')}
-  </tbody></table></div>` : '<p class="empty">Sin tarjetas cargadas.</p>';
+  </tbody></table></div>` : '<p class="empty">Sin tarjetas pendientes.</p>';
+}
+function hasUnpaidFine(pid){
+  return state.fines.some(f=>f.player===pid && f.status!=='Pagada');
+}
+function disciplineResolved(pid,pending){
+  const recorded = state.disciplineResolvedCards?.[pid];
+  return Array.isArray(recorded) && pending===0 && !hasUnpaidFine(pid) && state.cards.filter(c=>c.player===pid).every(c=>recorded.includes(c.id));
+}
+async function resolveDiscipline(pid){
+  if(!isAdmin) return;
+  const cards = state.cards.filter(c=>c.player===pid);
+  if(!cards.length) return;
+  const red = cards.filter(c=>c.type==='Roja').length;
+  if(suspensionInfo(pid,cards.length-red,red).pending>0) return alert('El jugador todavía tiene fechas pendientes.');
+  if(hasUnpaidFine(pid)) return alert('Primero marcá sus multas como pagadas.');
+  if(!confirm('¿Quitar a '+playerName(pid)+' de esta lista? Se conservarán su ficha, las tarjetas de los partidos y las multas pagadas.')) return;
+  state.disciplineResolvedCards = state.disciplineResolvedCards || {};
+  state.disciplineResolvedCards[pid] = cards.map(c=>c.id);
+  await persist();
+  renderCards();
 }
 function addFine(){
   if(!isAdmin) return;
@@ -1722,18 +1811,18 @@ function addFine(){
   if(!player || amount<=0) return;
   state.fines.push({id:'fi'+Date.now(), player, amount, reason:document.getElementById('f-reason').value.trim(), status:document.getElementById('f-status').value});
   document.getElementById('f-amount').value=''; document.getElementById('f-reason').value='';
-  persist(); renderFines();
+  persist(); renderFines(); renderCards();
 }
 function markFinePaid(id){
   if(!isAdmin) return;
   const f = state.fines.find(x=>x.id===id); if(!f) return;
   f.status = 'Pagada';
-  persist(); renderFines();
+  persist(); renderFines(); renderCards();
 }
 function deleteFine(id){
   if(!isAdmin) return;
   state.fines = state.fines.filter(x=>x.id!==id);
-  persist(); renderFines();
+  persist(); renderFines(); renderCards();
 }
 function renderFines(){
   const el = document.getElementById('fines-list');
@@ -1852,8 +1941,8 @@ function fillTransferSelects(){
   fillSelect('tr-player', state.players.map(p=>`<option value="${p.id}">${esc(p.name)} (${esc(teamName(p.team))})</option>`).join('') || '<option value="">Sin jugadores</option>');
   fillSelect('tr-team', state.teams.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('') || '<option value="">Sin equipos</option>');
 }
-function doTransfer(){
-  if(!isAdmin) return;
+async function doTransfer(){
+  if(!isAdmin||!requirePlayerStorage()) return;
   const win = document.getElementById('tr-window').value;
   const player = document.getElementById('tr-player').value;
   const newTeam = document.getElementById('tr-team').value;
@@ -1865,10 +1954,10 @@ function doTransfer(){
   p.team = newTeam;
   state.transfers.push({id:'tf'+Date.now(), window:win, player, from, to:newTeam});
   msg.style.display='none';
-  persist(); renderTeams(); renderTransfers(); fillTransferSelects();
+  await persist({['liga-players/byId/'+player+'/team']:newTeam}); renderTeams(); renderTransfers(); fillTransferSelects();
 }
-function deleteTransfer(id){
-  if(!isAdmin) return;
+async function deleteTransfer(id){
+  if(!isAdmin||!requirePlayerStorage()) return;
   const idx = state.transfers.findIndex(t=>t.id===id); if(idx<0) return;
   const t = state.transfers[idx];
   // Solo se puede revertir la última transferencia de ese jugador, si no el historial quedaría incoherente.
@@ -1882,7 +1971,7 @@ function deleteTransfer(id){
   if(!confirm(msg)) return;
   if(p && state.teams.some(x=>x.id===t.from)) p.team = t.from;
   state.transfers.splice(idx,1);
-  persist(); renderTeams(); renderTransfers(); fillTransferSelects();
+  await persist(p?{['liga-players/byId/'+p.id+'/team']:p.team}:{}); renderTeams(); renderTransfers(); fillTransferSelects();
 }
 function renderTransfers(){
   const el = document.getElementById('transfers-list');
@@ -1975,6 +2064,7 @@ function setAppTheme(theme){
 try{setAppTheme(localStorage.getItem('liga-theme')||'original');}catch(e){setAppTheme('original');}
 // INICIO FUNCION RESETEAR
 async function resetTournamentData(){
+  if(!requirePlayerStorage())return;
   if(!isAdmin || !fbDb2 || !mainLoaded || !playersLoaded){alert('Ingresá como administrador y esperá la sincronización.');return;}
   if(!confirm('Se borrarán partidos, resultados, goles, tarjetas, multas, sanciones, ventanas de pases, transferencias e historial de torneos. Se conservan clubes, jugadores, insignias y reglamentos. Se descargará un respaldo antes de borrar.'))return;
   if(prompt('Para confirmar escribí RESETEAR')!=='RESETEAR')return;
@@ -1989,7 +2079,7 @@ async function resetTournamentData(){
     const result=await fbRef.transaction(current=>{
       if(!current)return;
       const kept=normalizeState({teams:current.teams||[],settings:{tournamentName:'Torneo actual'}});
-      delete kept.players;return kept;
+      delete kept.players;kept.registrationOpen=registrationPolicy(kept);return kept;
     });
     if(!result.committed)throw new Error('No se encontraron datos para resetear.');
     closeModal('match-modal');closeModal('detail-modal');
@@ -2034,8 +2124,8 @@ function renderDelegateAccess(){
   Object.entries(delegateAccounts).forEach(([uid,account])=>{
     const row=document.createElement('div');row.className='card';
     const label=document.createElement('p');label.textContent=(account.email||uid)+' — '+teamName(account.team);row.append(label);
-    const button=document.createElement('button');button.className='link danger';button.textContent='Quitar acceso a insignias';
-    button.onclick=async()=>{if(!isAdmin||!confirm('¿Quitar acceso a insignias a esta cuenta?'))return;try{await fbDb2.ref('liga-delegados/'+uid).remove();}catch(e){alert('No se pudo quitar el acceso: '+e.message);}};
+    const button=document.createElement('button');button.className='link danger';button.textContent='Quitar acceso al club';
+    button.onclick=async()=>{if(!isAdmin||!confirm('¿Quitar el acceso al club a esta cuenta?'))return;try{await fbDb2.ref('liga-delegados/'+uid).remove();}catch(e){alert('No se pudo quitar el acceso: '+e.message);}};
     row.append(button);list.append(row);
   });
 }
@@ -2061,10 +2151,10 @@ async function createDelegateAccount(){
     if(!isAdmin)throw new Error('La sesión de administrador cambió.');
     await fbDb2.ref('liga-delegados/'+created.uid).set({team,email});linked=true;
     document.getElementById('delegate-password').value='';
-    status.textContent='Cuenta creada y vinculada a '+teamName(team)+'. Entregá el correo y la contraseña al delegado. Las insignias se publican sin aprobación.';
+    status.textContent='Cuenta creada y vinculada a '+teamName(team)+'. Entregá el correo y la contraseña al delegado. Podrá inscribir jugadores y publicar la insignia de su club.';
   }catch(e){
     if(created&&!linked){try{await created.delete();}catch{status.textContent='Cuenta creada sin vinculación. UID: '+created.uid+'. Vinculala después de corregir las reglas.';return;}}
-    status.textContent=e.code==='auth/email-already-in-use'?'Ese correo ya tiene cuenta. Usá su UID en “Vincular una cuenta ya creada”.':'No se pudo crear o vincular la cuenta: '+e.message;
+    status.textContent=e.code==='auth/email-already-in-use'?'Ese correo ya tiene cuenta. Conservá su cuenta y verificá su asignación al club en Firebase.':'No se pudo crear o vincular la cuenta: '+e.message;
   }finally{if(secondary){try{await secondary.auth().signOut();await secondary.delete();}catch{}}button.disabled=false;}
 }
 async function linkExistingDelegate(){
@@ -2098,20 +2188,40 @@ const badgeRuleSnippet={
     }
   }
 };
-function completeBadgeRules(){
-  const user=fbDb2?firebase.auth().currentUser:null;
-  if(!isAdmin||!user||user.email?.toLowerCase()!==ADMIN_EMAIL)return null;
-  const admin="auth != null && auth.uid === '"+user.uid+"'";
+function buildSecurityRules(adminUid){
+  const admin="auth != null && auth.uid === '"+adminUid+"'";
   const additions=JSON.parse(JSON.stringify(badgeRuleSnippet));
   additions['liga-delegados']['.read']=admin;
   additions['liga-delegados']['.write']=admin;
-  additions['liga-insignias']['$club']['.write']="auth != null && (auth.uid === '"+user.uid+"' || (auth.token.firebase.sign_in_provider === 'password' && root.child('liga-delegados').child(auth.uid).child('team').val() === $club))";
+  additions['liga-insignias']['$club']['.write']="auth != null && (auth.uid === '"+adminUid+"' || (auth.token.firebase.sign_in_provider === 'password' && root.child('liga-delegados').child(auth.uid).child('team').val() === $club))";
+  const createOwn="auth != null && auth.token.firebase.sign_in_provider === 'password' && root.child('liga-players/v').val() === 2 && !data.exists() && newData.exists() && root.child('liga-delegados').child(auth.uid).child('team').isString() && newData.child('team').val() === root.child('liga-delegados').child(auth.uid).child('team').val() && root.child('liga-data/registrationOpen').child(newData.child('team').val()).val() === true";
+  const field=(condition)=>({'.validate':'('+admin+') || ('+condition+')'});
   return {rules:{'.read':false,'.write':false,
     'liga-data':{'.read':'auth != null','.write':admin},
-    'liga-players':{'.read':'auth != null','.write':'auth != null','.validate':"newData.hasChild('v')"},
+    'liga-players':{
+      '.read':'auth != null','.write':admin,
+      '.validate':"newData.child('v').val() === 2 && !newData.child('list').exists()",
+      'v':{'.validate':'newData.val() === 2'},
+      'byId':{'$player':{
+        '.write':createOwn,
+        '.validate':"newData.hasChildren(['id','name','team']) && (("+admin+") || newData.hasChildren(['birthdate','document']))",
+        'id':field('newData.isString() && newData.val() === $player'),
+        'name':field('newData.isString() && newData.val().length > 0 && newData.val().length <= 120'),
+        'team':field('newData.isString() && newData.val().length > 0'),
+        'birthdate':field('newData.isString() && newData.val().length <= 10'),
+        'document':field('newData.isString() && newData.val().length <= 40'),
+        '$other':{'.validate':admin}
+      }},
+      '$other':{'.validate':false}
+    },
     'reglamentos':{'.read':'auth != null','.write':admin},
     ...additions
   }};
+}
+function completeBadgeRules(){
+  const user=fbDb2?firebase.auth().currentUser:null;
+  if(!isAdmin||!user||user.email?.toLowerCase()!==ADMIN_EMAIL)return null;
+  return buildSecurityRules(user.uid);
 }
 function renderBadgeRules(){
   const el=document.getElementById('badge-rules');if(!el)return;
