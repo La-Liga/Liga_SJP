@@ -132,6 +132,23 @@ sup{font-size:.7em;color:var(--muted);margin-left:2px;}
 .tiegrid{grid-template-columns:minmax(0,1fr) 32px 38px 38px;gap:2px;}
 .badge-review{max-width:80px;max-height:80px;object-fit:contain;}
 @media(max-width:420px){.wrap{padding-left:10px;padding-right:10px}.bracket-pair{padding:0 26px}.bracket-pair .bcard,.bracket-pair .tiecard{padding:10px 8px}.tiegrid{font-size:.75rem}.bracket-pair .club-badge{width:20px;margin-right:4px}}
+/* Verde oscuro original y clasificación según el tema */
+:root[data-theme="original"]{
+  color-scheme:dark;
+  --bg:#10140F; --surface:#1A211A; --border:#2C362B; --text:#EDEFE8;
+  --muted:#9AA394; --primary:#4FAE68; --primary-text:#0B140C;
+  --danger:#E17A5C; --pending:#E0B15C;
+}
+.standings-table{--standings-ink:#fff;background:var(--surface);color:var(--standings-ink);border-radius:10px;overflow:hidden;}
+:root[data-theme="white"] .standings-table{--standings-ink:#000;}
+.standings-table th{background:var(--bg);color:var(--standings-ink);font-weight:800;}
+.standings-table th,.standings-table td{border-bottom:1px solid var(--border);}
+.standings-team{color:var(--standings-ink);font-weight:600;}
+.standings-team-label{display:flex;align-items:center;gap:4px;}
+.standings-team-label .club-badge{display:inline-flex;align-items:center;justify-content:center;}
+.standings-rank{display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:30px;padding:0 4px;font-weight:700;color:var(--standings-ink);}
+.standings-rank.marked{background:#e53935;color:var(--standings-ink);border-radius:6px;}
+.standings-points{font-weight:800;color:var(--standings-ink);}
 </style>
 </head>
 <body>
@@ -205,7 +222,7 @@ sup{font-size:.7em;color:var(--muted);margin-left:2px;}
 
   <div class="card">
     <div class="row" style="justify-content:space-between;align-items:center">
-      <span style="font-size:.85rem;color:var(--muted)">Descargá equipos, jugadores, partidos, resultados, goleadores y clasificación</span>
+      <span style="font-size:.85rem;color:var(--muted)">Descargar equipos, jugadores, partidos, resultados, goleadores y clasificación</span>
       <button class="btn small" onclick="exportExcel()">Exportar a Excel</button>
     </div>
   </div>
@@ -569,7 +586,7 @@ function startSync(){
   const cbRegl = snap=>{ reglamentoData = snap.val() || null; renderReglamento(); };
   const refRegl = fbDb2.ref('reglamentos');
   const badgeRef=fbDb2.ref('liga-insignias');
-  const onBadges=snap=>{clubBadges=snap.val()||{};renderTeams();renderBracket();};
+  const onBadges=snap=>{clubBadges=snap.val()||{};renderTeams();renderBracket();renderStandings();};
   badgeRef.on('value',onBadges,()=>{});syncListeners.push([badgeRef,onBadges]);
   const user=firebase.auth().currentUser;
   if(user){
@@ -1894,8 +1911,8 @@ function computeStandings(group){
   return Object.values(stats).map(s=>({...s, dg:s.gf-s.gc, pts:s.g*3+s.e})).sort((a,b)=> b.pts-a.pts || b.dg-a.dg || b.gf-a.gf || a.name.localeCompare(b.name));
 }
 function standingsTable(rows){
-  return `<div class="table-wrap"><table><thead><tr><th>#</th><th>Equipo</th><th class="num">PJ</th><th class="num">G</th><th class="num">E</th><th class="num">P</th><th class="num">GF</th><th class="num">GC</th><th class="num">DG</th><th class="num">Pts</th></tr></thead><tbody>
-  ${rows.map((r,i)=>`<tr><td class="num" style="font-weight:700;${i>=rows.length-4?'color:#e53935':''}">${i+1}</td><td class="team-a">${esc(r.name)}${r.protest?' *':''}</td><td class="num">${r.pj}</td><td class="num">${r.g}</td><td class="num">${r.e}</td><td class="num">${r.p}</td><td class="num">${r.gf}</td><td class="num">${r.gc}</td><td class="num">${r.dg}</td><td class="num" style="font-weight:700;color:var(--primary)">${r.pts}</td></tr>`).join('')}
+  return `<div class="table-wrap"><table class="standings-table"><thead><tr><th>#</th><th>Equipos</th><th class="num">PJ</th><th class="num">G</th><th class="num">E</th><th class="num">P</th><th class="num">GF</th><th class="num">GC</th><th class="num">DG</th><th class="num">Pts</th></tr></thead><tbody>
+  ${rows.map((r,i)=>`<tr><td class="num"><span class="standings-rank${i>=rows.length-4?' marked':''}">${i+1}</span></td><td class="standings-team"><span class="standings-team-label">${clubBadge(r.id)}<span>${esc(r.name)}${r.protest?' *':''}</span></span></td><td class="num">${r.pj}</td><td class="num">${r.g}</td><td class="num">${r.e}</td><td class="num">${r.p}</td><td class="num">${r.gf}</td><td class="num">${r.gc}</td><td class="num">${r.dg}</td><td class="num standings-points">${r.pts}</td></tr>`).join('')}
   </tbody></table></div>`;
 }
 function renderStandings(){
@@ -1954,7 +1971,7 @@ function setAppTheme(theme){
   if(!['original','blue','black','white'].includes(theme))theme='original';
   document.documentElement.dataset.theme=theme;
   document.getElementById('app-theme').value=theme;
-  document.querySelector('meta[name="theme-color"]').content=({blue:'#0f172a',black:'#080808',white:'#ffffff',original:'#2F7A42'})[theme];
+  document.querySelector('meta[name="theme-color"]').content=({blue:'#0f172a',black:'#080808',white:'#ffffff',original:'#10140F'})[theme];
   try{localStorage.setItem('liga-theme',theme);}catch(e){}
 }
 try{setAppTheme(localStorage.getItem('liga-theme')||'original');}catch(e){setAppTheme('original');}
