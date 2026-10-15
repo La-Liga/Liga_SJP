@@ -1,5 +1,5 @@
-const CACHE = 'liga-crm-v7';
-const ASSETS = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
+const CACHE = 'liga-crm-launch-v2';
+const ASSETS = ['./', './index.html', './manifest.json', './icon-192.png', './logo-liga.png', './icon-512.png', './apple-touch-icon.png'];
 
 self.addEventListener('install', e=>{
   // Se cachea archivo por archivo: si falta uno, el service worker igual se instala.
@@ -7,7 +7,7 @@ self.addEventListener('install', e=>{
   self.skipWaiting();
 });
 self.addEventListener('activate', e=>{
-  e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))));
+  e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('liga-crm-') && k!==CACHE).map(k=>caches.delete(k)))));
   self.clients.claim();
 });
 self.addEventListener('fetch', e=>{
