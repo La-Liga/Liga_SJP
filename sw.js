@@ -1,5 +1,5 @@
-const CACHE = 'liga-crm-launch-v2';
-const ASSETS = ['./', './index.html', './manifest.json', './icon-192.png', './logo-liga.png', './icon-512.png', './apple-touch-icon.png'];
+const CACHE = 'liga-crm-launch-v3';
+const ASSETS = ['./', './index.html', './manifest.json', './icon-transparent-v3-192.png', './logo-liga.png', './icon-transparent-v3-512.png', './apple-touch-transparent-v3.png'];
 
 self.addEventListener('install', e=>{
   // Se cachea archivo por archivo: si falta uno, el service worker igual se instala.
