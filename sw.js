@@ -1,4 +1,4 @@
-const CACHE = 'liga-crm-entry-v4';
+const CACHE = 'liga-crm-rounds-time-v5';
 const ASSETS = ['./', './index.html', './manifest.json', './icon-transparent-v3-192.png', './logo-liga.png', './icon-transparent-v3-512.png', './apple-touch-transparent-v3.png'];
 
 self.addEventListener('install', e=>{
