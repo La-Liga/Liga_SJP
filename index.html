@@ -421,7 +421,7 @@ body{animation:app-content-enter .24s ease-out;}
       <div><label>Día del partido</label><input type="date" id="m-date"></div>
       <div><label>Hora de comienzo</label><input type="time" id="m-time"></div>
       <div><label>Hora de finalización</label><input type="time" id="m-end-time"></div>
-      <div class="full"><label><input type="checkbox" id="m-end-next-day"> Finaliza al día siguiente</label></div>
+      <input type="checkbox" id="m-end-next-day" hidden>
       <div><label>Grupo del local</label><select id="m-home-group" onchange="fillTeamSelects()"><option value="A">Grupo A</option><option value="B">Grupo B</option><option value="">Todos los grupos</option><option value="unassigned">Sin grupo</option></select></div>
       <div><label>Grupo del visitante</label><select id="m-away-group" onchange="fillTeamSelects()"><option value="A">Grupo A</option><option value="B">Grupo B</option><option value="">Todos los grupos</option><option value="unassigned">Sin grupo</option></select></div>
       <div><label>Local</label><select id="m-home"></select></div>
