@@ -191,9 +191,7 @@ body{animation:app-content-enter .24s ease-out;}
         <span class="badge ok">Administrador</span>
         <button class="link" onclick="toggleChangePass()">Cambiar contraseña</button>
         <button class="link danger" onclick="logout()">Salir</button>
-        <!-- INICIO BOTON RESETEAR: borrar esta línea del botón para retirarlo -->
-        <button id="reset-tournament-btn" class="btn small ghost" onclick="resetTournamentData()">Resetear datos del torneo</button>
-        <!-- FIN BOTON RESETEAR -->
+
         <details><summary>Cuentas de delegados · insignias directas</summary>
           <p class="empty">Creá una cuenta por delegado y asignale su club. Luego podrá publicar su insignia sin aprobación.</p>
           <label>Club<select id="delegate-club"></select></label>
@@ -226,6 +224,16 @@ body{animation:app-content-enter .24s ease-out;}
       <button class="btn" onclick="delegateAccountLogin()">Ingresar con cuenta</button>
       <button class="btn ghost" onclick="logout()">Cerrar sesión</button>
       <p class="empty" id="delegate-session-status" role="status"></p>
+      <div id="delegate-password-area" style="display:none">
+        <button class="btn small ghost" onclick="toggleDelegatePassword()">Cambiar mi contraseña</button>
+        <form id="delegate-password-form" style="display:none;margin-top:12px" onsubmit="event.preventDefault();changeDelegatePassword()">
+          <label>Contraseña actual<input id="delegate-current-pass" type="password" autocomplete="current-password" required></label>
+          <label>Nueva contraseña (mínimo 8 caracteres)<input id="delegate-new-pass" type="password" autocomplete="new-password" minlength="8" required></label>
+          <label>Repetir nueva contraseña<input id="delegate-confirm-pass" type="password" autocomplete="new-password" minlength="8" required></label>
+          <div class="row"><button id="delegate-save-pass" class="btn small" type="submit">Guardar contraseña</button><button class="btn small ghost" type="button" onclick="toggleDelegatePassword(false)">Cancelar</button></div>
+          <p id="delegate-password-status" class="empty" role="status" aria-live="polite"></p>
+        </form>
+      </div>
 
     </div>
   </div>
@@ -2197,32 +2205,7 @@ function setAppTheme(theme){
   try{localStorage.setItem('liga-theme',theme);}catch(e){}
 }
 try{setAppTheme(localStorage.getItem('liga-theme')||'original');}catch(e){setAppTheme('original');}
-// INICIO FUNCION RESETEAR
-async function resetTournamentData(){
-  if(!requirePlayerStorage())return;
-  if(!isAdmin || !fbDb2 || !mainLoaded || !playersLoaded){alert('Ingresá como administrador y esperá la sincronización.');return;}
-  if(!confirm('Se borrarán partidos, resultados, goles, tarjetas, multas, sanciones, ventanas de pases, transferencias e historial de torneos. Se conservan clubes, jugadores, insignias y reglamentos. Se descargará un respaldo antes de borrar.'))return;
-  if(prompt('Para confirmar escribí RESETEAR')!=='RESETEAR')return;
-  const user=firebase.auth().currentUser;
-  if(!user || user.email?.toLowerCase()!==ADMIN_EMAIL)return;
-  const button=document.getElementById('reset-tournament-btn'); if(button)button.disabled=true;
-  try{
-    const snapshot=await fbRef.once('value'); const before=snapshot.val()||{};
-    const playerSnapshot=await fbPlayersRef.once('value');
-    saveBlob(new Blob([JSON.stringify({main:before,players:playerSnapshot.val()},null,2)],{type:'application/json'}),'respaldo-liga-'+Date.now()+'.json');
-    // Transacción: conserva los clubes de la versión más reciente. No escribe liga-players.
-    const result=await fbRef.transaction(current=>{
-      if(!current)return;
-      const kept=normalizeState({teams:current.teams||[],settings:{tournamentName:'Torneo actual'}});
-      delete kept.players;kept.registrationOpen=registrationPolicy(kept);return kept;
-    });
-    if(!result.committed)throw new Error('No se encontraron datos para resetear.');
-    closeModal('match-modal');closeModal('detail-modal');
-    alert('Reseteo completado. Clubes y jugadores conservados.');
-  }catch(e){alert('No se pudo completar el reseteo: '+e.message);}
-  finally{if(button)button.disabled=false;}
-}
-// FIN FUNCION RESETEAR
+
 function validBadge(src){return typeof src==='string' && /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(src) && src.length<180000;}
 function clubBadge(id){const src=clubBadges[id]?.image || state.teams.find(t=>t.id===id)?.badge;return validBadge(src)?`<img class="club-badge" alt="" src="${src}">`:'<span class="club-badge" aria-hidden="true">🛡️</span>';}
 async function compressBadge(file){
@@ -2248,13 +2231,68 @@ async function uploadClubBadge(id,input){
   }catch(e){alert('No se pudo publicar la insignia. '+(e.code==='PERMISSION_DENIED'?'Revisá las reglas de Firebase y que tu cuenta esté vinculada a este club.':e.message));}
   finally{input.disabled=false;input.value='';}
 }
+let delegatePasswordUid=null;
+let delegatePasswordSaving=false;
+function clearDelegatePasswords(){
+  ['delegate-current-pass','delegate-new-pass','delegate-confirm-pass'].forEach(id=>{document.getElementById(id).value='';});
+}
+function renderDelegatePasswordAccess(user){
+  const allowed=!!user && !user.isAnonymous && !isAdmin && !!trustedDelegateTeam && user.providerData.some(p=>p.providerId==='password');
+  document.getElementById('delegate-password-area').style.display=allowed?'block':'none';
+  if(!allowed || delegatePasswordUid!==user.uid){
+    clearDelegatePasswords();
+    document.getElementById('delegate-password-form').style.display='none';
+    document.getElementById('delegate-password-status').textContent='';
+  }
+  delegatePasswordUid=allowed?user.uid:null;
+}
+function toggleDelegatePassword(force){
+  const form=document.getElementById('delegate-password-form');
+  const show=typeof force==='boolean'?force:form.style.display==='none';
+  clearDelegatePasswords();document.getElementById('delegate-password-status').textContent='';
+  form.style.display=show?'block':'none';
+  if(show)document.getElementById('delegate-current-pass').focus();
+}
+async function changeDelegatePassword(){
+  if(delegatePasswordSaving)return;
+  const user=fbDb2?firebase.auth().currentUser:null;
+  const status=document.getElementById('delegate-password-status');
+  if(!user||user.isAnonymous||isAdmin||!trustedDelegateTeam){status.textContent='Ingresá con tu cuenta de delegado.';return;}
+  const current=document.getElementById('delegate-current-pass').value;
+  const next=document.getElementById('delegate-new-pass').value;
+  const repeat=document.getElementById('delegate-confirm-pass').value;
+  if(!current){status.textContent='Escribí tu contraseña actual.';return;}
+  if(next.length<8){status.textContent='La nueva contraseña debe tener al menos 8 caracteres.';return;}
+  if(next!==repeat){status.textContent='Las contraseñas nuevas no coinciden.';return;}
+  if(next===current){status.textContent='Elegí una contraseña diferente de la actual.';return;}
+  const button=document.getElementById('delegate-save-pass');
+  delegatePasswordSaving=true;button.disabled=true;status.textContent='Guardando…';
+  try{
+    const credential=firebase.auth.EmailAuthProvider.credential(user.email,current);
+    await user.reauthenticateWithCredential(credential);
+    if(firebase.auth().currentUser?.uid!==user.uid||!trustedDelegateTeam)throw new Error('session-changed');
+    await user.updatePassword(next);
+    clearDelegatePasswords();
+    if(firebase.auth().currentUser?.uid===user.uid)status.textContent='Contraseña cambiada. La próxima vez ingresá con la nueva; tu club sigue vinculado.';
+  }catch(e){
+    clearDelegatePasswords();
+    if(firebase.auth().currentUser?.uid!==user.uid)return;
+    status.textContent=['auth/wrong-password','auth/invalid-credential','auth/invalid-login-credentials'].includes(e.code)?'La contraseña actual no es correcta.':
+      e.code==='auth/weak-password'||e.code==='auth/password-does-not-meet-requirements'?'La nueva contraseña no cumple los requisitos de seguridad de la cuenta.':
+      e.code==='auth/too-many-requests'?'Demasiados intentos. Esperá unos minutos y volvé a intentar.':
+      e.code==='auth/network-request-failed'?'No se pudo confirmar el cambio. Revisá tu conexión.':
+      'No se pudo confirmar el cambio. Volvé a ingresar e intentá nuevamente.';
+  }finally{delegatePasswordSaving=false;button.disabled=false;}
+}
+
 function renderDelegateAccess(){
   if(typeof badgeRuleSnippet!=='undefined')renderBadgeRules();
   const select=document.getElementById('delegate-club');
   if(select)fillSelect('delegate-club',sortedTeams().map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join(''));
   const session=document.getElementById('delegate-session-status');
   const user=fbDb2?firebase.auth().currentUser:null;
-  if(session)session.textContent='';
+  renderDelegatePasswordAccess(user);
+  if(session)session.textContent=user&&!user.isAnonymous&&!isAdmin&&trustedDelegateTeam?'Sesión de '+user.email+' · '+teamName(trustedDelegateTeam):'';
   const list=document.getElementById('delegate-accounts');if(!list)return;list.replaceChildren();if(!isAdmin)return;
   Object.entries(delegateAccounts).forEach(([uid,account])=>{
     const row=document.createElement('div');row.className='card';
