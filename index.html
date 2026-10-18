@@ -148,7 +148,29 @@ sup{font-size:.7em;color:var(--muted);margin-left:2px;}
 .standings-team-label .club-badge{display:inline-flex;align-items:center;justify-content:center;}
 .standings-rank{display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:30px;padding:0 4px;font-weight:700;color:var(--standings-ink);}
 .standings-rank.marked{background:#e53935;color:var(--standings-ink);border-radius:6px;}
-.standings-points{font-weight:800;color:var(--standings-ink);}
+ .standings-points{font-weight:800;color:var(--standings-ink);}
+/* Tabla de posiciones compacta para pantallas pequeñas */
+@media(max-width:600px){
+  .card{padding:10px;}
+  .standings-table{width:100%;table-layout:fixed;font-size:.68rem;}
+  .standings-table th,.standings-table td{padding:6px 2px;white-space:normal;}
+  .standings-table th{font-size:.61rem;letter-spacing:0;text-align:center;}
+  .standings-table th:first-child,.standings-table td:first-child{width:7%;}
+  .standings-table th:nth-child(2),.standings-table td:nth-child(2){width:29%;}
+  .standings-table th:nth-child(n+3),.standings-table td:nth-child(n+3){width:7.1%;}
+  .standings-table td.num,.standings-table th.num{font-size:.65rem;padding-left:1px;padding-right:1px;}
+  .standings-rank{min-width:0;width:19px;height:22px;padding:0 1px;font-size:.65rem;}
+  .standings-team-label{gap:3px;align-items:center;}
+  .standings-team-label .club-badge{width:16px!important;min-width:16px!important;height:16px!important;margin-right:0!important;flex:0 0 16px;}
+  .standings-team-label>span:last-child{overflow-wrap:anywhere;line-height:1.15;}
+}
+@media(max-width:380px){
+  .standings-table th,.standings-table td{padding-top:5px;padding-bottom:5px;}
+  .standings-table th{font-size:.56rem;}
+  .standings-table td.num,.standings-table th.num{font-size:.6rem;}
+  .standings-team-label .club-badge{display:none!important;}
+  .standings-table th:nth-child(2),.standings-table td:nth-child(2){width:31%;}
+}
 </style>
 
 <!-- Fundido breve del contenido, sin segunda pantalla de inicio. -->
