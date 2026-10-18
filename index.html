@@ -320,6 +320,7 @@ body{animation:app-content-enter .24s ease-out;}
     <div class="card admin-only">
       <h2>Cargar goles</h2>
       <div class="grid">
+        <div><label>Equipo</label><select id="g-team" onchange="updatePlayerSelectForTeam('g-team','g-player')"></select></div>
         <div><label>Jugador</label><select id="g-player"></select></div>
         <div><label>Goles</label><input type="number" min="1" value="1" id="g-goals"></div>
         <div class="full"><label>Partido (opcional)</label><select id="g-match"><option value="">—</option></select></div>
@@ -357,6 +358,7 @@ body{animation:app-content-enter .24s ease-out;}
     <div class="card admin-only">
       <h2>Cargar tarjeta</h2>
       <div class="grid">
+        <div><label>Equipo</label><select id="c-team" onchange="updatePlayerSelectForTeam('c-team','c-player')"></select></div>
         <div><label>Jugador</label><select id="c-player"></select></div>
         <div><label>Tipo</label><select id="c-type"><option value="Amarilla">Amarilla</option><option value="Roja">Roja</option></select></div>
         <div class="full"><label>Partido (opcional)</label><select id="c-match"><option value="">—</option></select></div>
@@ -366,6 +368,7 @@ body{animation:app-content-enter .24s ease-out;}
     <div class="card admin-only">
       <h2>Cargar multa</h2>
       <div class="grid">
+        <div><label>Equipo</label><select id="f-team" onchange="updatePlayerSelectForTeam('f-team','f-player')"></select></div>
         <div><label>Jugador</label><select id="f-player"></select></div>
         <div><label>Monto</label><input type="number" min="0" id="f-amount"></div>
         <div class="full"><label>Motivo</label><input id="f-reason"></div>
@@ -810,6 +813,37 @@ function changePass(){
       : 'No se pudo cambiar la contraseña.');
   });
 }
+
+// Cierre de sesión por inactividad o por dejar la app en segundo plano durante 30 minutos.
+const SESSION_IDLE_LIMIT = 30 * 60 * 1000;
+let lastSessionActivity = Date.now();
+let hiddenSince = null;
+let sessionExpiryHandled = false;
+function endExpiredSession(){
+  if(sessionExpiryHandled) return;
+  const user=fbDb2 && firebase.auth().currentUser;
+  if(!user || user.isAnonymous) return;
+  sessionExpiryHandled=true;
+  logout();
+  setSyncStatus('Sesión cerrada por inactividad. Volvé a ingresar para administrar.');
+}
+function registerSessionActivity(){
+  lastSessionActivity=Date.now();
+  sessionExpiryHandled=false;
+}
+['pointerdown','keydown','touchstart','click'].forEach(evt=>document.addEventListener(evt,registerSessionActivity,{passive:true}));
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){hiddenSince=Date.now();}
+  else if(hiddenSince!==null){
+    if(Date.now()-hiddenSince>=SESSION_IDLE_LIMIT) endExpiredSession();
+    hiddenSince=null; registerSessionActivity();
+  }
+});
+window.addEventListener('focus',()=>{
+  if(Date.now()-lastSessionActivity>=SESSION_IDLE_LIMIT) endExpiredSession();
+  registerSessionActivity();
+});
+setInterval(()=>{if(Date.now()-lastSessionActivity>=SESSION_IDLE_LIMIT) endExpiredSession();},60000);
 
 // ---- tabs ----
 document.querySelectorAll('.tab-btn').forEach(b=>{
@@ -1839,8 +1873,20 @@ function addQuickCard(matchId){
 }
 
 // ---- goleadores ----
+function fillTeamPlayerSelects(teamSelectId, playerSelectId){
+  const teamEl=document.getElementById(teamSelectId);
+  const previousTeam=teamEl?.value||'';
+  fillSelect(teamSelectId, '<option value="">Elegí un equipo</option>'+sortedTeams().map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join(''));
+  if(previousTeam && state.teams.some(t=>String(t.id)===String(previousTeam))) teamEl.value=previousTeam;
+  updatePlayerSelectForTeam(teamSelectId,playerSelectId);
+}
+function updatePlayerSelectForTeam(teamSelectId, playerSelectId){
+  const team=document.getElementById(teamSelectId)?.value||'';
+  const players=sortedPlayers().filter(p=>team && String(p.team)===String(team));
+  fillSelect(playerSelectId, '<option value="">'+(team?(players.length?'Elegí un jugador':'Este equipo no tiene jugadores'):'Primero elegí un equipo')+'</option>'+players.map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join(''));
+}
 function fillGoalSelects(){
-  fillSelect('g-player', sortedPlayers().map(p=>`<option value="${p.id}">${esc(p.name)} (${esc(teamName(p.team))})</option>`).join('') || '<option value="">Sin jugadores</option>');
+  fillTeamPlayerSelects('g-team','g-player');
   fillSelect('g-match', '<option value="">—</option>' + state.matches.map(m=>`<option value="${m.id}">${m.date||'s/f'} ${esc(teamName(m.home))} vs ${esc(teamName(m.away))}</option>`).join(''));
 }
 function addGoal(){
@@ -1873,9 +1919,8 @@ function renderGoals(){
 
 // ---- disciplina (tarjetas y multas) ----
 function fillDisciplinaSelects(){
-  const opts = sortedPlayers().map(p=>`<option value="${p.id}">${esc(p.name)} (${esc(teamName(p.team))})</option>`).join('') || '<option value="">Sin jugadores</option>';
-  fillSelect('c-player', opts);
-  fillSelect('f-player', opts);
+  fillTeamPlayerSelects('c-team','c-player');
+  fillTeamPlayerSelects('f-team','f-player');
   fillSelect('c-match', '<option value="">—</option>' + state.matches.map(m=>`<option value="${m.id}">${m.date||'s/f'} ${esc(teamName(m.home))} vs ${esc(teamName(m.away))}</option>`).join(''));
 }
 function addCard(){
@@ -2422,7 +2467,7 @@ renderWindows();
 renderTransfers();
 renderTournamentManager();
 renderStandings();
-try{ const lt=localStorage.getItem('liga-last-tab'); const lb=lt && document.querySelector('.tab-btn[data-tab="'+lt+'"]'); if(lb) lb.click(); }catch(e){}
+try{ const lb=document.querySelector('.tab-btn[data-tab="tabla"]'); if(lb) lb.click(); }catch(e){}
 </script>
 <script>
 if('serviceWorker' in navigator){
