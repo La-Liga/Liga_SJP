@@ -322,9 +322,6 @@ body{animation:app-content-enter .24s ease-out;}
   <!-- PARTIDOS -->
   <div class="panel" id="panel-partidos">
     <div class="card admin-only">
-      <div class="row" style="flex-wrap:wrap;gap:8px">
-       </div>
-    <div class="card admin-only">
       <button class="btn" onclick="openMatchAdd()">+ Agregar partido</button>
     </div>
     <div class="card"><h2>Próximos partidos</h2><div id="matches-list"></div></div>
@@ -2045,77 +2042,8 @@ function assignEliminationDates(){
 }
 
 function generateFixture(){
-  if(!isAdmin) return;
-  if(preventLockedRemoval(state.matches))return;
-  const msg = document.getElementById('fx-msg');
-  msg.style.display='none';
-
-  const grupoA = state.teams.filter(t=>t.group==='A');
-  const grupoB = state.teams.filter(t=>t.group==='B');
-  if(grupoA.length!==12 || grupoB.length!==12){
-    msg.textContent=`El fixture necesita exactamente 12 equipos en Grupo A y 12 en Grupo B. Actualmente: A=${grupoA.length}, B=${grupoB.length}.`;
-    msg.style.display='block';
-    return;
-  }
-
-  const startVal = document.getElementById('fx-start').value;
-  if(!startVal){ msg.textContent='Elegí la fecha de la primera fecha.'; msg.style.display='block'; return; }
-  const interval = Math.max(1, parseInt(document.getElementById('fx-interval').value)||7);
-
-  if(state.matches.length && !confirm('¿Regenerar el fixture? Se eliminarán los partidos actuales del fixture de grupos/interserial y se crearán las 11 fechas de grupos + 1 fecha interserial. Las eliminatorias se conservarán.')) return;
-
-  // Conservamos eliminatorias y eliminamos solamente el fixture de fase de grupos/interserial.
-  state.matches = state.matches.filter(m=>{
-    const ph = m.phase || 'grupos';
-    return !(ph==='grupos' || /^fecha_\d+$/.test(ph) || ph==='interserial');
-  });
-
-  function makeRoundRobin(teams){
-    const arr = teams.map(t=>t.id);
-    const rounds=[];
-    for(let r=0;r<11;r++){
-      const games=[];
-      for(let i=0;i<6;i++){
-        const a=arr[i], b=arr[11-i];
-        games.push(r%2===0?[a,b]:[b,a]);
-      }
-      rounds.push(games);
-      arr.splice(1,0,arr.pop());
-    }
-    return rounds;
-  }
-
-  const roundsA = makeRoundRobin(grupoA);
-  const roundsB = makeRoundRobin(grupoB);
-  const base = new Date(startVal+'T00:00:00');
-  const dateFor = idx => {
-    const d = new Date(base.getTime() + idx*interval*86400000);
-    return d.toISOString().slice(0,10);
-  };
-  const newMatch=(phase,date,home,away)=>({
-    id:'m'+Date.now()+Math.random().toString(36).slice(2,8),
-    phase,date,time:'',home,away,hscore:null,ascore:null,hpen:null,apen:null,protest:false
-  });
-
-  // 11 fechas de grupos: 6 partidos A + 6 partidos B = 12 por fecha.
-  for(let r=0;r<11;r++){
-    const phase=`fecha_${r+1}`;
-    const date=dateFor(r);
-    [...roundsA[r], ...roundsB[r]].forEach(([home,away])=>state.matches.push(newMatch(phase,date,home,away)));
-  }
-
-  // Fecha 12: Interserial. Cada equipo juega una sola vez contra un equipo del otro grupo.
-  const interDate=dateFor(11);
-  for(let i=0;i<12;i++){
-    state.matches.push(newMatch('interserial',interDate,grupoA[i].id,grupoB[i].id));
-  }
-
-  // Ya no se generan partidos directos de Copa desde el fixture.
-  persist();
-  document.getElementById('fx-start').value='';
-  renderMatchViews();
-  msg.textContent='¡Fixture generado: 11 fechas de grupos + 1 Interserial (12 partidos por fecha)!';
-  msg.style.display='block';
+  alert('La generación automática del fixture está deshabilitada.');
+  return;
 }
 function addQuickGoal(matchId){
   if(!isAdmin) return;
