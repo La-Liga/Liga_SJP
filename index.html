@@ -192,10 +192,18 @@ body{animation:app-content-enter .24s ease-out;}
      <div style="display:flex;align-items:center;gap:12px">
   <img src="logo-liga.png"
        alt="Logo de la liga"
-       style="width:60px;height:60px;object-fit:contain;flex-shrink:0">
+       style="width:60px;height:60px;object-fit:contain;flex-shrink:0" onerror="this.style.display='none'">
   <h1 style="margin:0">Liga San Juan del Paraná</h1>
 </div>
-      <p class="empty" id="sync-status">🔄 Conectando...</p>
+      <p class="empty" id="sync-status" role="status" aria-live="polite">🔄 Conectando...</p>
+      <div id="network-banner" role="status" aria-live="polite" style="display:none;padding:9px 12px;margin:6px 0;border-radius:8px;border:1px solid #b45309;background:#fff7ed;color:#9a3412;font-size:.92rem;font-weight:600">⚠ Sin conexión. Los cambios pueden quedar solo en este dispositivo; no se consideran sincronizados hasta confirmarlo.</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 10px">
+        <button class="btn small" type="button" onclick="downloadFullBackup()">📦 Descargar copia de seguridad</button>
+      </div>
+      <div id="pending-draft-tools" style="display:none;gap:8px;flex-wrap:wrap;margin:6px 0 10px">
+        <button class="btn small" type="button" onclick="downloadPendingDraft()">⬇️ Descargar copia pendiente</button>
+        <button class="btn small danger" type="button" onclick="discardPendingDraftAndLoadServer()">Descartar copia local y cargar servidor</button>
+      </div>
     </div>
     <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
     <button id="install-btn" class="btn small" style="display:none" onclick="installApp()">📲 Instalar app</button>
@@ -209,12 +217,17 @@ body{animation:app-content-enter .24s ease-out;}
       <select id="app-theme" onchange="setAppTheme(this.value)"><option value="white">Blanco</option><option value="original">Verde</option><option value="blue">Azul grisáceo</option><option value="black">Negro</option></select>
       <h2>Administrador</h2>
       <div id="admin-locked">
-        <label>Contraseña de administrador</label>
-        <div class="row"><input type="password" id="admin-pass" placeholder="Contraseña"><button class="btn small" onclick="login()">Ingresar</button></div>
-        <p class="empty" id="admin-err" style="display:none">Contraseña incorrecta.</p>
+        <label>Correo del administrador</label>
+        <input type="email" id="admin-email" placeholder="admin@liga-sjp.app" autocomplete="username" value="admin@liga-sjp.app">
+        <label>Contraseña</label>
+        <div class="row"><input type="password" id="admin-pass" placeholder="Contraseña" autocomplete="current-password"><button class="btn small" onclick="login()">Ingresar</button></div>
+        <button class="link" type="button" onclick="sendAdminPasswordReset()">Olvidé mi contraseña</button>
+        <p class="empty" id="admin-err" style="display:none"></p>
       </div>
       <div id="admin-unlocked" style="display:none">
         <span class="badge ok">Administrador</span>
+        <p class="empty" id="admin-session-email" role="status">Sesión de administrador activa.</p>
+
         <button class="link" onclick="toggleChangePass()">Cambiar contraseña</button>
         <button class="link danger" onclick="logout()">Salir</button>
 
@@ -281,6 +294,7 @@ body{animation:app-content-enter .24s ease-out;}
     <button class="tab-btn" data-tab="equipos">Equipos</button>
     <button class="tab-btn" data-tab="transferencias">Transferencia</button>
     <button class="tab-btn" data-tab="reglamento">Reglamentos</button>
+    <button class="tab-btn" data-tab="auditoria">Auditoría</button>
   </nav>
 
   <!-- EQUIPOS -->
@@ -408,6 +422,7 @@ body{animation:app-content-enter .24s ease-out;}
   </div>
 
   <!-- REGLAMENTO -->
+  <div class="panel" id="panel-auditoria"><div class="card"><h2>Auditoría de cambios</h2><p class="empty">Registra fecha, usuario y módulos afectados. No reemplaza todavía un registro inmutable del servidor.</p><div id="audit-view"></div><button class="btn ghost admin-only" onclick="downloadAuditLog()">Exportar auditoría</button></div></div>
   <div class="panel" id="panel-reglamento">
     <div class="card admin-only">
       <h2>Subir reglamento (PDF, máx. 50 MB)</h2>
@@ -494,6 +509,10 @@ function normalizeState(s){
   s.teams = s.teams || []; s.matches = s.matches || []; s.players = s.players || [];
   s.goals = s.goals || []; s.windows = s.windows || []; s.transfers = s.transfers || [];
   s.cards = s.cards || []; s.fines = s.fines || []; s.suspensionsServed = s.suspensionsServed || {};
+  s.auditLog = Array.isArray(s.auditLog) ? s.auditLog : [];
+  s.schemaVersion = Number.isInteger(s.schemaVersion) ? s.schemaVersion : 2;
+  s.settings = s.settings || {};
+  s.settings.activeTournamentId = s.settings.activeTournamentId || ('torneo-' + Date.now().toString(36));
   s.settings = s.settings || {};
   delete s.settings.adminPass;
   s.tournaments = Array.isArray(s.tournaments) ? s.tournaments : [];
@@ -558,9 +577,27 @@ state = normalizeState(state);
 let clubBadges={}, trustedDelegateTeam=null, delegateAccounts={};
 let reglamentoData = null;
 
-function persistLocal(){ try{ localStorage.setItem('liga-crm-data', JSON.stringify(state)); }catch(e){} }
+const LOCAL_STATE_KEY='liga-crm-data';
+const PENDING_STATE_KEY='liga-crm-pending-state';
+function persistLocal(){
+  try{ localStorage.setItem(LOCAL_STATE_KEY, JSON.stringify(state)); }catch(e){}
+}
+function saveOfflineDraft(){
+  try{
+    const draft={savedAt:new Date().toISOString(),state:cleanData(state)};
+    localStorage.setItem(PENDING_STATE_KEY,JSON.stringify(draft));
+    refreshPendingDraftTools();
+    setSyncStatus('⚠ Cambio guardado en este dispositivo; pendiente de sincronización. No cierres ni borres los datos del navegador.');
+    return true;
+  }catch(e){
+    setSyncStatus('❌ No se pudo guardar el cambio sin conexión.');
+    return false;
+  }
+}
+function hasOfflineDraft(){try{return !!localStorage.getItem(PENDING_STATE_KEY);}catch(e){return false;}}
+function clearOfflineDraft(){try{localStorage.removeItem(PENDING_STATE_KEY);}catch(e){}refreshPendingDraftTools();}
 function renderAll(){
-  applyAdmin(); renderTeams(); renderMatches(); renderResultados(); renderBracket(); renderGoals(); renderCards(); renderFines(); renderWindows(); renderTransfers(); renderStandings(); renderTournamentManager(); if(detailId) renderDetail();
+  applyAdmin(); renderTeams(); renderMatches(); renderResultados(); renderBracket(); renderGoals(); renderCards(); renderFines(); renderWindows(); renderTransfers(); renderStandings(); renderTournamentManager(); renderAuditLog(); if(detailId) renderDetail();
 }
 
 // ---- sync (Firebase Realtime Database) ----
@@ -576,9 +613,13 @@ const firebaseConfig = {
 // Cuenta de administrador (se crea en Firebase > Authentication > Correo y contraseña).
 // La contraseña NO está en el código: la escribís vos al ingresar.
 const ADMIN_EMAIL = 'admin@liga-sjp.app';
+const ADMIN_EMAILS = [ADMIN_EMAIL, 'frafaelsilvero@gmail.com'];
+function isAdminEmail(email){ return !!email && ADMIN_EMAILS.includes(String(email).trim().toLowerCase()); }
 let fbRef = null, fbPlayersRef = null, fbDb2 = null, fbReady = false;
 let syncListeners = [];
 let mainLoaded = false, playersLoaded = false, remoteMain = null, remotePlayers = null;
+// Baselines advance only when remote data is applied or a save succeeds.
+let lastAppliedRemoteMain = null, lastAppliedStateMain = null;
 try{
   firebase.initializeApp(firebaseConfig);
   fbDb2 = firebase.database();
@@ -586,8 +627,49 @@ try{
   fbPlayersRef = fbDb2.ref('liga-players');  // jugadores: también escriben los delegados
 }catch(e){}
 
-function setSyncStatus(txt){ const st=document.getElementById('sync-status'); if(st) st.textContent=txt; }
+function setSyncStatus(txt){ const st=document.getElementById('sync-status'); if(st) st.textContent=txt; refreshPendingDraftTools(); }
 function cleanData(o){ return JSON.parse(JSON.stringify(o)); }
+function refreshPendingDraftTools(){
+  const el=document.getElementById('pending-draft-tools');
+  if(el) el.style.display=hasOfflineDraft()?'flex':'none';
+}
+function downloadFullBackup(){
+  try{
+    const backup={format:'liga-sjp-backup',version:1,createdAt:new Date().toISOString(),projectId:firebaseConfig.projectId,state:cleanData(state),pendingDraft:hasOfflineDraft()};
+    const blob=new Blob([JSON.stringify(backup,null,2)],{type:'application/json;charset=utf-8'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;
+    a.download='liga-sjp-respaldo-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';
+    document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+    setSyncStatus(hasOfflineDraft()?'📦 Respaldo descargado. También hay cambios pendientes que deben revisarse.':'📦 Respaldo local descargado. Guardalo en un lugar seguro.');
+  }catch(e){alert('No se pudo generar el respaldo. No cierres la aplicación hasta revisar los datos.');}
+}
+function downloadPendingDraft(){
+  try{
+    const raw=localStorage.getItem(PENDING_STATE_KEY);
+    if(!raw){alert('No hay una copia pendiente para descargar.');refreshPendingDraftTools();return;}
+    const blob=new Blob([raw],{type:'application/json;charset=utf-8'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;
+    a.download='liga-copia-pendiente-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';
+    document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+    setSyncStatus('📦 Copia pendiente descargada. Guardala antes de descartar o recuperar datos.');
+  }catch(e){alert('No se pudo descargar la copia pendiente. No descartes los datos de este dispositivo.');}
+}
+function discardPendingDraftAndLoadServer(){
+  if(!hasOfflineDraft()){refreshPendingDraftTools();return;}
+  if(!confirm('Esto descarta la copia pendiente de ESTE dispositivo y carga los datos del servidor. Descargá primero una copia si necesitás conservar esos cambios. ¿Continuar?'))return;
+  clearOfflineDraft();
+  if(remoteMain||remotePlayers){
+    const merged=Object.assign({},remoteMain||{});
+    if(remotePlayers)merged.players=playersFromStorage(remotePlayers);
+    state=normalizeState(merged);persistLocal();renderAll();
+    setSyncStatus('✅ Se cargaron los datos actuales del servidor. La copia local pendiente fue descartada.');
+  }else{
+    setSyncStatus('⚠ Se descartó la marca de cambios pendientes, pero todavía no llegaron datos del servidor. Recargá con conexión.');
+  }
+  refreshPendingDraftTools();
+}
 
 function registrationPolicy(main){
   const result={};
@@ -612,15 +694,82 @@ function requirePlayerStorage(){
   }
   return true;
 }
+function stableStringify(value){
+  if(value===null||typeof value!=='object')return JSON.stringify(value);
+  if(Array.isArray(value))return '['+value.map(stableStringify).join(',')+']';
+  return '{'+Object.keys(value).sort().map(k=>JSON.stringify(k)+':'+stableStringify(value[k])).join(',')+'}';
+}
+function mainStateSnapshot(value){
+  const snapshot=cleanData(value||{});
+  delete snapshot.players;
+  return snapshot;
+}
+function auditActor(){
+  try{const u=firebase.auth().currentUser;return (u?.email||u?.uid||'sesión local').toString().slice(0,160);}catch{return 'sesión local';}
+}
+function changedStateAreas(before,after){
+  const a=before||{},b=after||{};
+  const keys=['teams','matches','players','goals','windows','transfers','cards','fines','settings','tournaments','registrationOpen','registrationClosedTeams','bracketOrder','reglamento','suspensionsServed'];
+  return keys.filter(k=>stableStringify(a[k]??null)!==stableStringify(b[k]??null));
+}
+function appendAuditEntry(areas,action='Guardar cambios'){
+  if(!Array.isArray(state.auditLog))state.auditLog=[];
+  const entry={id:'aud-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,7),at:new Date().toISOString(),actor:auditActor(),action:String(action).slice(0,100),areas:(areas||[]).slice(0,30),tournamentId:state.settings?.activeTournamentId||null};
+  state.auditLog.push(entry);
+  if(state.auditLog.length>500)state.auditLog=state.auditLog.slice(-500);
+  return entry;
+}
+function renderAuditLog(){
+  const el=document.getElementById('audit-view');if(!el)return;
+  const rows=[...(state.auditLog||[])].reverse();
+  el.innerHTML=rows.length?`<div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Módulos</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${esc(x.at?new Date(x.at).toLocaleString('es-PY'): '—')}</td><td>${esc(x.actor||'—')}</td><td>${esc(x.action||'Cambio')}</td><td>${esc((x.areas||[]).join(', ')||'—')}</td></tr>`).join('')}</tbody></table></div>`:'<p class="empty">Todavía no hay cambios registrados.</p>';
+}
+function downloadAuditLog(){
+  if(!isAdmin)return;
+  const blob=new Blob([JSON.stringify({schemaVersion:1,exportedAt:new Date().toISOString(),entries:state.auditLog||[]},null,2)],{type:'application/json;charset=utf-8'});
+  const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='liga-sjp-auditoria.json';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+}
 async function persist(playerWrites={}){
-  if(!isAdmin||!fbDb2)return false;
+  // Guardar primero en el dispositivo para conservar el cambio si falla la red.
+  persistLocal();
+  if(!isAdmin){ saveOfflineDraft(); return false; }
   if(Object.keys(playerWrites).length&&!requirePlayerStorage())return false;
+  if(!fbDb2 || !navigator.onLine){ saveOfflineDraft(); return false; }
   try{
-    const upd={'liga-data':mainForSave(),...playerWrites};
-    await fbDb2.ref().update(upd);
-    persistLocal();return true;
+    // Antes de publicar el estado completo, comprobar que otro administrador no haya cambiado el servidor.
+    // Si cambió desde la última lectura, se bloquea la escritura para evitar pisar sus cambios.
+    if(!mainLoaded){
+      saveOfflineDraft();
+      setSyncStatus('⚠ Aún se están cargando los datos del servidor. El cambio quedó guardado localmente; esperá y revisá antes de sincronizar.');
+      return false;
+    }
+    const lastSeen=lastAppliedRemoteMain||null;
+    const changedAreas=changedStateAreas(lastAppliedStateMain,mainStateSnapshot(state));
+    if(changedAreas.length)appendAuditEntry(changedAreas);
+    const mainToSave=mainForSave();
+    // La transacción hace que la comparación y la escritura de liga-data sean atómicas:
+    // si el otro administrador guarda justo ahora, esta escritura se aborta en vez de pisarlo.
+    const tx=await fbRef.transaction(current=>{
+      if(stableStringify(current||null)!==stableStringify(lastSeen)) return;
+      return mainToSave;
+    }, undefined, false);
+    if(!tx.committed){
+      saveOfflineDraft();
+      setSyncStatus('⚠ Conflicto detectado: el otro administrador modificó datos. Tu cambio se conservó en este dispositivo y no se publicó para evitar borrar cambios ajenos. Descargá la copia pendiente antes de recargar.');
+      return false;
+    }
+    // Avanzar la referencia de liga-data apenas la transacción confirma.
+    remoteMain=cleanData(mainToSave);
+    lastAppliedRemoteMain=cleanData(mainToSave);
+    lastAppliedStateMain=mainStateSnapshot(state);
+    // Las escrituras auxiliares de jugadores van después de proteger liga-data.
+    // Si fallan, el borrador queda pendiente para revisión en lugar de ocultar el problema.
+    if(Object.keys(playerWrites).length) await fbDb2.ref().update(playerWrites);
+    clearOfflineDraft();persistLocal();setSyncStatus('✅ Sincronizado en tiempo real');return true;
   }catch(e){
-    applyRemote();alert('No se pudieron guardar los cambios en Firebase: '+e.message);return false;
+    saveOfflineDraft();
+    setSyncStatus('⚠ No se pudo confirmar en el servidor. El cambio quedó guardado localmente; revisá la sincronización antes de seguir editando.');
+    return false;
   }
 }
 function playersFromStorage(value,fallback=[]){
@@ -670,7 +819,15 @@ async function initializeEmptyPlayerStorage(){
 
 // Junta lo que llega de los dos nodos y lo aplica a la app.
 function applyRemote(){
-  if(!mainLoaded || !playersLoaded) return;
+  // If the local state differs from the last state applied from the server,
+  // treat it as unsaved work and never replace it silently with a remote update.
+  const localHasUncommittedChanges=lastAppliedStateMain!==null &&
+    stableStringify(mainStateSnapshot(state))!==stableStringify(lastAppliedStateMain);
+  if(hasOfflineDraft() || localHasUncommittedChanges){
+    if(localHasUncommittedChanges && !hasOfflineDraft()) saveOfflineDraft();
+    setSyncStatus('⚠ Hay cambios locales pendientes. Se conserva la copia de este dispositivo; descargala antes de descartar o recargar.');
+    return;
+  }
   const merged = Object.assign({}, remoteMain || {});
   if(remotePlayers){
     merged.players=playersFromStorage(remotePlayers);
@@ -678,12 +835,14 @@ function applyRemote(){
   if(remoteMain || remotePlayers){
     state = normalizeState(merged);
     persistLocal();
+    lastAppliedRemoteMain=remoteMain?cleanData(remoteMain):null;
+    lastAppliedStateMain=mainStateSnapshot(state);
     renderAll();
+    if(mainLoaded && playersLoaded && !hasOfflineDraft()) setSyncStatus('✅ Datos del servidor cargados');
   }
   // Solo prepara automáticamente listas vacías; nunca borra jugadores existentes.
   initializeEmptyPlayerStorage();
 }
-
 function stopSync(){
   syncListeners.forEach(([ref,cb])=>{ try{ ref.off('value', cb); }catch(e){} });
   syncListeners = [];
@@ -695,7 +854,6 @@ function startSync(){
   const onErr = ()=>{ fbReady = true; setSyncStatus('⚠ Sin conexión — usando datos guardados en este celular'); };
   const cbMain = snap=>{
     remoteMain = snap.val(); mainLoaded = true; fbReady = true;
-    setSyncStatus('✅ Sincronizado en tiempo real');
     applyRemote();
   };
   const cbPlayers = snap=>{
@@ -737,10 +895,11 @@ if(fbDb2){
       });
       return;
     }
-    const nowAdmin = !!user.email && user.email.toLowerCase()===ADMIN_EMAIL;
+    const nowAdmin = isAdminEmail(user.email);
     const changed = nowAdmin !== isAdmin;
     isAdmin = nowAdmin;
     startSync();            // se vuelve a conectar al cambiar de sesión (visitante <-> administrador)
+    applyAdmin();
     if(changed) renderAll();
   });
 } else {
@@ -796,6 +955,8 @@ function applyAdmin(){
   document.body.classList.toggle('admin-mode', isAdmin);
   document.getElementById('admin-locked').style.display = isAdmin?'none':'block';
   document.getElementById('admin-unlocked').style.display = isAdmin?'block':'none';
+  const sessionEmail=document.getElementById('admin-session-email');
+  if(sessionEmail){const user=fbDb2?firebase.auth().currentUser:null;sessionEmail.textContent=isAdmin?'Sesión activa: '+(user?.email||'administrador'):'Sesión sin privilegios de administrador';}
   const addCard = document.getElementById('team-add-card');
   if(addCard) addCard.style.display = isAdmin ? 'block' : 'none';
   fillTransferSelects();
@@ -812,12 +973,40 @@ function toggleSettingsPanel(){
 }
 function renderSettingsPanel(){ renderDelegateAccess(); }
 function login(){
+  const email = (document.getElementById('admin-email')?.value || '').trim().toLowerCase();
   const val = document.getElementById('admin-pass').value;
   const err = document.getElementById('admin-err');
-  if(!val || !fbDb2){ err.style.display='block'; return; }
-  firebase.auth().signInWithEmailAndPassword(ADMIN_EMAIL, val)
+  if(!isAdminEmail(email)){ err.textContent='Ese correo no está habilitado como administrador.'; err.style.display='block'; return; }
+  if(!val || !fbDb2){ err.textContent='Ingresá el correo y la contraseña.'; err.style.display='block'; return; }
+  firebase.auth().signInWithEmailAndPassword(email, val)
     .then(()=>{ document.getElementById('admin-pass').value=''; err.style.display='none'; })
-    .catch(()=>{ err.style.display='block'; });
+    .catch(e=>{
+      const messages={
+        'auth/invalid-email':'El formato del correo no es válido.',
+        'auth/user-disabled':'Esta cuenta está deshabilitada en Firebase Authentication.',
+        'auth/user-not-found':'No existe una cuenta con ese correo en este proyecto de Firebase.',
+        'auth/wrong-password':'La contraseña no coincide. Podés usar “Olvidé mi contraseña”.',
+        'auth/invalid-credential':'No se pudo validar el correo y la contraseña. Revisá los datos o restablecé la contraseña.',
+        'auth/too-many-requests':'Hubo demasiados intentos. Esperá un momento antes de volver a probar.',
+        'auth/operation-not-allowed':'El acceso por correo y contraseña no está habilitado en Firebase Authentication.',
+        'auth/network-request-failed':'No se pudo conectar con Firebase. Revisá tu conexión a internet.',
+        'auth/invalid-api-key':'La configuración de Firebase de este archivo no es válida.'
+      };
+      err.textContent=(messages[e?.code]||'No se pudo iniciar sesión. Código: '+(e?.code||'desconocido')+'. Verificá la configuración del proyecto Firebase.');
+      err.style.display='block';
+    });
+}
+function sendAdminPasswordReset(){
+  const email=(document.getElementById('admin-email')?.value||'').trim().toLowerCase();
+  const err=document.getElementById('admin-err');
+  if(!isAdminEmail(email)){err.textContent='Ingresá uno de los correos habilitados para administrar la liga.';err.style.display='block';return;}
+  if(!fbDb2){err.textContent='No hay conexión con la configuración de Firebase de esta aplicación.';err.style.display='block';return;}
+  firebase.auth().sendPasswordResetEmail(email)
+    .then(()=>{err.textContent='Si la cuenta existe y puede recibir correos, Firebase enviará instrucciones para restablecer la contraseña. Revisá también Spam.';err.style.display='block';})
+    .catch(e=>{
+      const messages={'auth/invalid-email':'El formato del correo no es válido.','auth/operation-not-allowed':'El acceso por correo y contraseña no está habilitado en Firebase.','auth/too-many-requests':'Hubo demasiados intentos. Esperá antes de volver a probar.','auth/network-request-failed':'No se pudo conectar con Firebase. Revisá internet.'};
+      err.textContent=messages[e?.code]||('No se pudo solicitar el restablecimiento. Código: '+(e?.code||'desconocido')+'.');err.style.display='block';
+    });
 }
 function logout(){
   if(!fbDb2) return;
@@ -869,6 +1058,11 @@ window.addEventListener('focus',()=>{
   if(Date.now()-lastSessionActivity>=SESSION_IDLE_LIMIT) endExpiredSession();
   registerSessionActivity();
 });
+window.addEventListener('online',()=>{
+  if(hasOfflineDraft()) setSyncStatus('⚠ Internet volvió. Hay cambios locales pendientes; descargá una copia antes de recargar y compará con los datos del servidor.');
+  else setSyncStatus('Conexión recuperada; esperando confirmación de Firebase…');
+});
+window.addEventListener('offline',()=>setSyncStatus('⚠ Sin internet. La app puede conservar cambios localmente; esos cambios aún no están publicados.'));
 setInterval(()=>{if(Date.now()-lastSessionActivity>=SESSION_IDLE_LIMIT) endExpiredSession();},60000);
 
 // ---- tabs ----
@@ -882,6 +1076,7 @@ document.querySelectorAll('.tab-btn').forEach(b=>{
     if(b.dataset.tab==='partidos') fillTeamSelects();
     if(b.dataset.tab==='resultados') renderResultados();
     if(b.dataset.tab==='eliminatorias') renderBracket();
+    if(b.dataset.tab==='auditoria') renderAuditLog();
     if(b.dataset.tab==='goleadores') renderGoals();
     if(b.dataset.tab==='transferencias'){ renderWindows(); renderTransfers(); }
     if(b.dataset.tab==='disciplina'){ renderCards(); renderFines(); }
@@ -1034,7 +1229,7 @@ function rosterHtml(teamId){
     </div>` : '';
   const partidosJugadosEquipo = state.matches.filter(m => (m.home===teamId || m.away===teamId) && isPlayed(m)).length;
   const formHabilitado = registrationClosed(teamId)
-    ? `<p style="color:#ff6b6b;font-size:13px;margin-top:8px">Inscripción cerrada: el equipo alcanzó cinco partidos disputados. No se pueden agregar jugadores nuevos en este torneo.</p>${isAdmin?`<div id="rp-closed-edit-${teamId}" style="display:none">${form}</div>`:''}`
+    ? `<p style="color:#ff6b6b;font-size:13px;margin-top:8px">Inscripción cerrada definitivamente: este equipo ya disputó cinco o más partidos. No se permiten altas nuevas, tampoco por administración.</p>`
     : form;
 
     return `<p class="empty" style="font-weight:700;color:var(--text);margin-top:12px">Plantel · ${players.length} jugadores · Sin límite de cupo</p>${list}${formHabilitado}`;
@@ -1043,7 +1238,8 @@ async function savePlayerFor(teamId){
   if(!canEditTeam(teamId)||!requirePlayerStorage())return;
   if(editingPlayerId&&!isAdmin)return;
   const matches=state.matches.filter(m=>(m.home===teamId||m.away===teamId)&&isPlayed(m));
-  if(!editingPlayerId&&registrationClosed(teamId)){alert('Inscripción cerrada: este equipo ya disputó 5 o más partidos.');return;}
+  // El límite de cinco partidos también se aplica al administrador: ninguna alta nueva puede saltarlo.
+  if(!editingPlayerId&&registrationClosed(teamId)){alert('Inscripción cerrada definitivamente: este equipo ya disputó 5 o más partidos. El bloqueo también se aplica al administrador.');return;}
   const surname=document.getElementById('rp-surname-'+teamId).value.trim();
   const given=document.getElementById('rp-name-'+teamId).value.trim();
   if(!surname||!given){alert('Completá apellidos y nombres por separado.');return;}
@@ -1097,11 +1293,36 @@ function editPlayerInline(id){
 async function deletePlayer(id){
   if(!isAdmin||!requirePlayerStorage())return;
   if(!confirm('¿Borrar este jugador?'))return;
+  const playerRef=fbPlayersRef.child('byId/'+id);
+  const beforeGoals=cleanData(state.goals||[]);
+  const playerSnapshot=await playerRef.once('value');
+  if(!playerSnapshot.exists()){alert('El jugador ya no existe en el servidor. Actualizá la vista antes de continuar.');return;}
   try{
-    await fbPlayersRef.child('byId/'+id).remove();
-    state.goals=state.goals.filter(g=>g.player!==id);
-    await persist();renderTeams();
-  }catch(e){alert('No se pudo borrar el jugador: '+e.message);}
+    // Primero se confirma el cambio de estadísticas. Nunca borrar la ficha si liga-data no se guardó.
+    state.goals=(state.goals||[]).filter(g=>g.player!==id);
+    appendAuditEntry(['jugadores','goles'],'Preparar eliminación de jugador');
+    const saved=await persist();
+    if(!saved){state.goals=beforeGoals;persistLocal();renderGoals();renderTeams();alert('No se borró el jugador porque los cambios de la liga no se confirmaron en el servidor.');return;}
+    // La base no permite una transacción atómica entre liga-data y liga-players con estas reglas.
+    // Si falla el segundo paso, intentar restaurar las estadísticas y conservar la ficha.
+    try{
+      const expectedPlayer=playerSnapshot.val();
+      const result=await playerRef.transaction(current=>{
+        // Borrar solo si la ficha sigue siendo exactamente la que leímos antes.
+        // Si otro administrador la editó o ya la borró, abortar sin tocarla.
+        if(current==null || stableStringify(current)!==stableStringify(expectedPlayer)) return;
+        return null;
+      },undefined,false);
+      if(!result.committed)throw new Error('La ficha cambió o ya fue borrada por otro administrador; no se eliminó para evitar perder cambios.');
+    }catch(removeError){
+      state.goals=beforeGoals;
+      const rolledBack=await persist();
+      renderGoals();renderTeams();
+      if(!rolledBack)alert('ATENCIÓN: no se pudo borrar la ficha y tampoco se pudo restaurar automáticamente la estadística. No sigas editando; descargá la copia pendiente y revisá Firebase.');
+      throw removeError;
+    }
+    renderTeams();renderGoals();
+  }catch(e){alert('No se pudo completar el borrado: '+e.message+' Si la conexión se cortó durante la operación, verificá la ficha y los goles en el servidor antes de repetirla.');}
 }
 
 // ---- gestión del ciclo de torneos ----
@@ -1145,17 +1366,18 @@ function finishTournament(){
   const name=state.settings.tournamentName||'Torneo actual';
   if(!confirm(`¿Finalizar "${name}"? Se guardará completo y se iniciará un torneo nuevo. Los equipos y jugadores se conservarán.`)) return;
   const archive={
-    id:'tor'+Date.now(), name, finishedAt:new Date().toLocaleString('es-PY'), champion,
+    id:state.settings.activeTournamentId||('tor'+Date.now()), schemaVersion:2, name, finishedAt:new Date().toISOString(), champion,
     teams:JSON.parse(JSON.stringify(state.teams)), players:JSON.parse(JSON.stringify(state.players)),
     matches:JSON.parse(JSON.stringify(state.matches)), goals:JSON.parse(JSON.stringify(state.goals||[])),
     cards:JSON.parse(JSON.stringify(state.cards||[])), fines:JSON.parse(JSON.stringify(state.fines||[])),
     windows:JSON.parse(JSON.stringify(state.windows||[])), transfers:JSON.parse(JSON.stringify(state.transfers||[])),
-    bracketOrder:JSON.parse(JSON.stringify(state.bracketOrder||{}))
+    bracketOrder:JSON.parse(JSON.stringify(state.bracketOrder||{})), auditLog:JSON.parse(JSON.stringify(state.auditLog||[])), settings:JSON.parse(JSON.stringify(state.settings||{}))
   };
   state.tournaments=state.tournaments||[];
   state.tournaments.push(archive);
   const previousChampion = state.settings.pendingRecopaChampion || null;
   state.settings.tournamentName='Nuevo torneo';
+  state.settings.activeTournamentId='tor-'+Date.now().toString(36);
   state.registrationOpen={};state.registrationClosedTeams={};state.resultRoundReached=0;
   state.matches=[]; state.goals=[]; state.cards=[]; state.fines=[]; state.windows=[]; state.transfers=[];
   state.bracketOrder={octavos:[0,1,2,3,4,5,6,7],oro_cuartos:[0,1,2,3],plata_cuartos:[0,1,2,3]};
@@ -2433,12 +2655,12 @@ const badgeRuleSnippet={
   }
 };
 function buildSecurityRules(adminUid){
-  const admin="auth != null && auth.uid === '"+adminUid+"'";
+  const admin="auth != null && (auth.uid === '"+adminUid+"' || auth.token.email === 'admin@liga-sjp.app' || auth.token.email === 'frafaelsilvero@gmail.com')";
   const additions=JSON.parse(JSON.stringify(badgeRuleSnippet));
   additions['liga-delegados']['.read']=admin;
   additions['liga-delegados']['.write']=admin;
-  additions['liga-insignias']['$club']['.write']="auth != null && (auth.uid === '"+adminUid+"' || (auth.token.firebase.sign_in_provider === 'password' && root.child('liga-delegados').child(auth.uid).child('team').val() === $club))";
-  const createOwn="auth != null && auth.token.firebase.sign_in_provider === 'password' && root.child('liga-players/v').val() === 2 && !data.exists() && newData.exists() && root.child('liga-delegados').child(auth.uid).child('team').isString() && newData.child('team').val() === root.child('liga-delegados').child(auth.uid).child('team').val() && root.child('liga-data/registrationOpen').child(newData.child('team').val()).val() === true";
+  additions['liga-insignias']['$club']['.write']="("+admin+") || (auth != null && auth.token.firebase.sign_in_provider === 'password' && root.child('liga-delegados').child(auth.uid).child('team').val() === $club)";
+  const createOwn="auth != null && auth.token.firebase.sign_in_provider === 'password' && root.child('liga-players/v').val() === 2 && !data.exists() && newData.exists() && root.child('liga-delegados').child(auth.uid).child('team').isString() && newData.child('team').val() === root.child('liga-delegados').child(auth.uid).child('team').val() && root.child('liga-data/registrationOpen').child(newData.child('team').val()).val() === true && root.child('liga-data/registrationClosedTeams').child(newData.child('team').val()).val() !== true";
   const field=(condition)=>({'.validate':'('+admin+') || ('+condition+')'});
   return {rules:{'.read':false,'.write':false,
     'liga-data':{'.read':'auth != null','.write':admin},
@@ -2464,7 +2686,7 @@ function buildSecurityRules(adminUid){
 }
 function completeBadgeRules(){
   const user=fbDb2?firebase.auth().currentUser:null;
-  if(!isAdmin||!user||user.email?.toLowerCase()!==ADMIN_EMAIL)return null;
+  if(!isAdmin||!user||!isAdminEmail(user.email))return null;
   return buildSecurityRules(user.uid);
 }
 function renderBadgeRules(){
@@ -2492,6 +2714,7 @@ renderReglamento();
 renderWindows();
 renderTransfers();
 renderTournamentManager();
+renderAuditLog();
 renderStandings();
 try{ const lb=document.querySelector('.tab-btn[data-tab="tabla"]'); if(lb) lb.click(); }catch(e){}
 </script>
