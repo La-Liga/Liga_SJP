@@ -681,7 +681,9 @@ function mainForSave(){
   const main=cleanData(state);delete main.players;
   // Conserva la ubicación antigua hasta completar la migración explícita.
   if(!playersAreMigrated() && remoteMain?.players)main.players=cleanData(remoteMain.players);
-  main.registrationOpen=registrationPolicy(main);
+  // registrationOpen es un dato derivado del índice; no se publica desde el cliente.
+  // El cierre persistente se guarda de forma monotónica en registrationClosedTeams.
+  delete main.registrationOpen;
   return main;
 }
 function playersAreMigrated(){return remotePlayers?.v===2;}
@@ -744,24 +746,47 @@ async function persist(playerWrites={}){
     const changedAreas=changedStateAreas(lastAppliedStateMain,mainStateSnapshot(state));
     if(changedAreas.length)appendAuditEntry(changedAreas);
     const mainToSave=mainForSave();
-    // La transacción hace que la comparación y la escritura de liga-data sean atómicas:
-    // si el otro administrador guarda justo ahora, esta escritura se aborta en vez de pisarlo.
-    const tx=await fbRef.transaction(current=>{
-      if(stableStringify(current||null)!==stableStringify(lastSeen)) return;
-      return mainToSave;
-    }, undefined, false);
-    if(!tx.committed){
-      saveOfflineDraft();
-      setSyncStatus('⚠ Conflicto detectado: el otro administrador modificó datos. Tu cambio se conservó en este dispositivo y no se publicó para evitar borrar cambios ajenos. Descargá la copia pendiente antes de recargar.');
-      return false;
+    // Ya no se escribe la raíz liga-data: cada área se guarda en su propio nodo.
+    // El cierre de inscripción se escribe primero y solo puede avanzar (false/ausente -> true).
+    const desiredClosed=mainToSave.registrationClosedTeams||{};
+    const previousClosed=lastSeen?.registrationClosedTeams||{};
+    for(const [teamId,closed] of Object.entries(desiredClosed)){
+      if(closed===true && previousClosed[teamId]!==true){
+        const closeTx=await fbRef.child('registrationClosedTeams').child(teamId).transaction(current=>current===true?true:true,undefined,false);
+        if(!closeTx.committed) throw new Error('No se pudo confirmar el cierre de inscripción de '+teamId);
+      }
     }
-    // Avanzar la referencia de liga-data apenas la transacción confirma.
+    const protectedKeys=new Set(['registrationClosedTeams','registrationOpen','players']);
+    const keys=[...new Set([...Object.keys(lastSeen||{}),...Object.keys(mainToSave||{})])]
+      .filter(k=>!protectedKeys.has(k) && k!=='matches' && stableStringify((lastSeen||{})[k]??null)!==stableStringify((mainToSave||{})[k]??null));
+    // Cada partido se guarda por separado: Firebase puede rechazar la edición de un resultado bloqueado.
+    if(stableStringify((lastSeen||{}).matches??null)!==stableStringify((mainToSave||{}).matches??null)){
+      const before=Array.isArray(lastSeen?.matches)?lastSeen.matches:Object.values(lastSeen?.matches||{});
+      const after=Array.isArray(mainToSave?.matches)?mainToSave.matches:Object.values(mainToSave?.matches||{});
+      for(let i=0;i<Math.max(before.length,after.length);i++){
+        if(stableStringify(before[i]??null)===stableStringify(after[i]??null))continue;
+        const expected=before[i]??null,desired=after[i]??null;
+        const tx=await fbRef.child('matches').child(String(i)).transaction(current=>{
+          if(stableStringify(current??null)!==stableStringify(expected))return;
+          return desired===null?null:desired;
+        },undefined,false);
+        if(!tx.committed)throw new Error('Conflicto o resultado bloqueado en el partido '+(i+1)+'.');
+      }
+    }
+    for(const key of keys){
+      const expected=(lastSeen||{})[key]??null;
+      const desired=(mainToSave||{})[key];
+      const tx=await fbRef.child(key).transaction(current=>{
+        if(stableStringify(current??null)!==stableStringify(expected)) return;
+        return desired===undefined?null:desired;
+      },undefined,false);
+      if(!tx.committed) throw new Error('Conflicto en el área '+key+'; no se pudo guardar sin riesgo de sobrescribir cambios ajenos.');
+    }
+    // Escribir jugadores en su ruta independiente, después de guardar el estado principal.
+    if(Object.keys(playerWrites).length) await fbDb2.ref().update(playerWrites);
     remoteMain=cleanData(mainToSave);
     lastAppliedRemoteMain=cleanData(mainToSave);
     lastAppliedStateMain=mainStateSnapshot(state);
-    // Las escrituras auxiliares de jugadores van después de proteger liga-data.
-    // Si fallan, el borrador queda pendiente para revisión en lugar de ocultar el problema.
-    if(Object.keys(playerWrites).length) await fbDb2.ref().update(playerWrites);
     clearOfflineDraft();persistLocal();setSyncStatus('✅ Sincronizado en tiempo real');return true;
   }catch(e){
     saveOfflineDraft();
@@ -794,20 +819,16 @@ async function initializeEmptyPlayerStorage(){
       if(playersFromStorage(null,main.players||[]).length || !emptyLegacyPlayerNode(currentPlayers)){
         setSyncStatus('⚠ Hay datos anteriores de jugadores. Se conservaron; requieren migración antes de nuevas inscripciones.');return;
       }
-      const result=await fbPlayersRef.transaction(current=>{
-        if(current?.v===2)return current;
-        // Si alguien agregó un jugador durante la preparación, no se sobrescribe.
-        if(!emptyLegacyPlayerNode(current))return;
-        return {v:2};
+      const result=await fbPlayersRef.child('v').transaction(current=>{
+        if(current===2)return 2;
+        // Solo crea el marcador de versión; nunca escribe la raíz de jugadores.
+        if(current!=null)return;
+        return 2;
       },undefined,false);
       if(!result.committed){setSyncStatus('⚠ La lista de jugadores cambió. No se sobrescribió ningún dato.');return;}
     }
     if(!isAdmin||firebase.auth().currentUser?.uid!==sessionUid)return;
-    await fbRef.transaction(current=>{
-      const main=current||{};
-      main.registrationOpen=registrationPolicy(main);
-      return main;
-    },undefined,false);
+    // No se escribe la raíz liga-data: el registro abierto se calcula localmente.
     setSyncStatus('✅ Sincronizado en tiempo real');
   }catch(e){
     setSyncStatus('⚠ No se pudo preparar la inscripción. Publicá las reglas nuevas de Firebase y recargá la app como administrador.');
@@ -921,8 +942,14 @@ function teamName(id){
 function alphaName(a,b){ return (a.name||'').localeCompare(b.name||'', 'es', {sensitivity:'base',numeric:true}); }
 function sortedTeams(){ return [...state.teams].sort(alphaName); }
 function sortedPlayers(){ return [...state.players].sort(alphaName); }
-function teamPlayedCount(teamId){ return state.matches.filter(m=>(m.home===teamId||m.away===teamId)&&isPlayed(m)).length; }
-function registrationClosed(teamId){ return state.registrationOpen?.[teamId]===false || !!state.registrationClosedTeams?.[teamId] || teamPlayedCount(teamId)>=5; }
+function teamPlayedCount(teamId){
+  // Cuenta partidos con ambos marcadores cargados; los pendientes no cuentan.
+  return state.matches.filter(m=>(String(m.home)===String(teamId)||String(m.away)===String(teamId))&&isPlayed(m)).length;
+}
+function registrationClosed(teamId){
+  // Cierre permanente: no depende del rol (también bloquea al administrador).
+  return state.registrationOpen?.[teamId]===false || !!state.registrationClosedTeams?.[teamId] || teamPlayedCount(teamId)>=5;
+}
 function latestResultRound(){
   return Math.max(Number(state.resultRoundReached)||0,0,...state.matches.filter(m=>m.phase!=='recopa'&&isPlayed(m)).map(matchRound));
 }
@@ -931,6 +958,7 @@ function resultIsLocked(m){
 }
 function sealCompetitionRules(){
   state.registrationClosedTeams=state.registrationClosedTeams||{};
+  // Al llegar a 5 partidos disputados se marca el cierre para conservarlo en Firebase.
   state.teams.forEach(t=>{if(registrationClosed(t.id))state.registrationClosedTeams[t.id]=true;});
   state.resultRoundReached=latestResultRound();
   state.matches.forEach(m=>{if(resultIsLocked(m))m.resultLocked=true;});
@@ -2657,17 +2685,23 @@ function buildSecurityRules(adminUid){
   additions['liga-delegados']['.read']=admin;
   additions['liga-delegados']['.write']=admin;
   additions['liga-insignias']['$club']['.write']="("+admin+") || (auth != null && auth.token.firebase.sign_in_provider === 'password' && root.child('liga-delegados').child(auth.uid).child('team').val() === $club)";
-  const createOwn="auth != null && auth.token.firebase.sign_in_provider === 'password' && root.child('liga-players/v').val() === 2 && !data.exists() && newData.exists() && root.child('liga-delegados').child(auth.uid).child('team').isString() && newData.child('team').val() === root.child('liga-delegados').child(auth.uid).child('team').val() && root.child('liga-data/registrationOpen').child(newData.child('team').val()).val() === true && root.child('liga-data/registrationClosedTeams').child(newData.child('team').val()).val() !== true";
+  const delegateCreate="auth != null && auth.token.firebase.sign_in_provider === 'password' && root.child('liga-players/v').val() === 2 && !data.exists() && newData.exists() && root.child('liga-delegados').child(auth.uid).child('team').isString() && newData.child('team').val() === root.child('liga-delegados').child(auth.uid).child('team').val() && root.child('liga-data/registrationClosedTeams').child(newData.child('team').val()).val() !== true";
+  const playerWrite="("+admin+" && (data.exists() || root.child('liga-data/registrationClosedTeams').child(newData.child('team').val()).val() !== true)) || ("+delegateCreate+")";
   const field=(condition)=>({'.validate':'('+admin+') || ('+condition+')'});
+  const areaWrite={};
+  ['teams','goals','windows','transfers','cards','fines','settings','tournaments','bracketOrder','reglamento','suspensionsServed','auditLog','resultRoundReached'].forEach(k=>areaWrite[k]={'.write':admin});
+  areaWrite.matches={'$matchIndex':{'.write':admin+" && (!data.exists() || data.child('resultLocked').val() !== true || (data.child('resultLocked').val() !== true && newData.child('resultLocked').val() === true && newData.child('hscore').val() === data.child('hscore').val() && newData.child('ascore').val() === data.child('ascore').val() && newData.child('hpen').val() === data.child('hpen').val() && newData.child('apen').val() === data.child('apen').val() && newData.child('home').val() === data.child('home').val() && newData.child('away').val() === data.child('away').val() && newData.child('phase').val() === data.child('phase').val()))"}};
+  areaWrite.registrationClosedTeams={
+    '$team':{'.write':admin+" && newData.val() === true",'.validate':'newData.val() === true'}
+  };
   return {rules:{'.read':false,'.write':false,
-    'liga-data':{'.read':'auth != null','.write':admin},
+    'liga-data':{'.read':'auth != null',...areaWrite},
     'liga-players':{
-      '.read':'auth != null','.write':admin,
-      '.validate':"newData.child('v').val() === 2 && !newData.child('list').exists()",
-      'v':{'.validate':'newData.val() === 2'},
+      '.read':'auth != null',
+      'v':{'.write':admin,'.validate':'newData.val() === 2'},
       'byId':{'$player':{
-        '.write':createOwn,
-        ".validate":"(newData.hasChildren(['id','name','team']) && (("+admin+") || newData.hasChildren(['birthdate','document']))) && ((data.exists() && data.child('team').val() === newData.child('team').val()) || ((root.child('liga-data').child('registrationOpen').child(newData.child('team').val()).val() === true && root.child('liga-data').child('registrationClosedTeams').child(newData.child('team').val()).val() !== true) && (newData.parent().parent().parent().child('liga-data').child('registrationOpen').child(newData.child('team').val()).val() === true && newData.parent().parent().parent().child('liga-data').child('registrationClosedTeams').child(newData.child('team').val()).val() !== true)))",
+        '.write':playerWrite,
+        '.validate':"newData.hasChildren(['id','name','team']) && (("+admin+") || newData.hasChildren(['birthdate','document']))",
         'id':field('newData.isString() && newData.val() === $player'),
         'name':field('newData.isString() && newData.val().length > 0 && newData.val().length <= 120'),
         'team':field('newData.isString() && newData.val().length > 0'),
