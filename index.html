@@ -323,19 +323,7 @@ body{animation:app-content-enter .24s ease-out;}
   <div class="panel" id="panel-partidos">
     <div class="card admin-only">
       <div class="row" style="flex-wrap:wrap;gap:8px">
-        <button class="btn ghost" onclick="toggleFixtureForm()">+ Generar fixture automático</button>
-        <button class="btn danger" onclick="deleteAllMatches()">🗑 Borrar fixture</button>
-      </div>
-      <div id="fixture-form-fields" style="display:none;margin-top:12px">
-        <div class="grid">
-          <div><label>Fecha de la 1ª fecha</label><input type="date" id="fx-start"></div>
-          <div><label>Días entre fechas</label><input type="number" min="1" value="7" id="fx-interval"></div>
-          <div class="full"><p class="empty" style="margin:0">El fixture se genera automáticamente con 11 fechas de grupos + 1 fecha Interserial. Son 12 partidos por fecha.</p></div>
-        </div>
-        <button class="btn" onclick="generateFixture()">Generar fixture</button>
-        <p class="empty" id="fx-msg" style="display:none"></p>
-      </div>
-    </div>
+       </div>
     <div class="card admin-only">
       <button class="btn" onclick="openMatchAdd()">+ Agregar partido</button>
     </div>
