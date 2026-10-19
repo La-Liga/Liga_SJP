@@ -197,9 +197,6 @@ body{animation:app-content-enter .24s ease-out;}
 </div>
       <p class="empty" id="sync-status" role="status" aria-live="polite">🔄 Conectando...</p>
       <div id="network-banner" role="status" aria-live="polite" style="display:none;padding:9px 12px;margin:6px 0;border-radius:8px;border:1px solid #b45309;background:#fff7ed;color:#9a3412;font-size:.92rem;font-weight:600">⚠ Sin conexión. Los cambios pueden quedar solo en este dispositivo; no se consideran sincronizados hasta confirmarlo.</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 10px">
-        <button class="btn small" type="button" onclick="downloadFullBackup()">📦 Descargar copia de seguridad</button>
-      </div>
       <div id="pending-draft-tools" style="display:none;gap:8px;flex-wrap:wrap;margin:6px 0 10px">
         <button class="btn small" type="button" onclick="downloadPendingDraft()">⬇️ Descargar copia pendiente</button>
         <button class="btn small danger" type="button" onclick="discardPendingDraftAndLoadServer()">Descartar copia local y cargar servidor</button>
@@ -217,8 +214,8 @@ body{animation:app-content-enter .24s ease-out;}
       <select id="app-theme" onchange="setAppTheme(this.value)"><option value="white">Blanco</option><option value="original">Verde</option><option value="blue">Azul grisáceo</option><option value="black">Negro</option></select>
       <h2>Administrador</h2>
       <div id="admin-locked">
-        <label>Correo del administrador</label>
-        <input type="email" id="admin-email" placeholder="admin@liga-sjp.app" autocomplete="username" value="admin@liga-sjp.app">
+        <label for="admin-email">Correo de acceso autorizado</label>
+        <input type="email" id="admin-email" placeholder="Ingresá tu correo autorizado" autocomplete="username">
         <label>Contraseña</label>
         <div class="row"><input type="password" id="admin-pass" placeholder="Contraseña" autocomplete="current-password"><button class="btn small" onclick="login()">Ingresar</button></div>
         <button class="link" type="button" onclick="sendAdminPasswordReset()">Olvidé mi contraseña</button>
@@ -956,7 +953,7 @@ function applyAdmin(){
   document.getElementById('admin-locked').style.display = isAdmin?'none':'block';
   document.getElementById('admin-unlocked').style.display = isAdmin?'block':'none';
   const sessionEmail=document.getElementById('admin-session-email');
-  if(sessionEmail){const user=fbDb2?firebase.auth().currentUser:null;sessionEmail.textContent=isAdmin?'Sesión activa: '+(user?.email||'administrador'):'Sesión sin privilegios de administrador';}
+  if(sessionEmail){const user=fbDb2?firebase.auth().currentUser:null;const email=(user?.email||'').toLowerCase();const adminLabel=email==='admin@liga-sjp.app'?'Administrador principal':(email==='frafaelsilvero@gmail.com'?'Administrador autorizado':'Administrador');sessionEmail.textContent=isAdmin?'Sesión activa · '+adminLabel:'Sesión sin privilegios de administrador';}
   const addCard = document.getElementById('team-add-card');
   if(addCard) addCard.style.display = isAdmin ? 'block' : 'none';
   fillTransferSelects();
