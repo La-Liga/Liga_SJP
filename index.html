@@ -455,7 +455,7 @@ body{animation:app-content-enter .24s ease-out;}
       <div><label>Día del partido</label><input type="date" id="m-date"></div>
       <div><label>Hora de comienzo</label><input type="time" id="m-time"></div>
       <div><label>Hora de finalización</label><input type="time" id="m-end-time"></div>
-      <div class="full"><label><input type="checkbox" id="m-end-next-day"> Finaliza al día siguiente</label></div>
+      <div class="full"><label><input type="checkbox" id="m-wo"> W.O. (walkover)</label><p class="empty">Al marcar W.O., el ganador queda con 3–0 como mínimo; si ya ganó por más de 3 goles, se conserva el resultado más amplio.</p></div>
       <div><label>Grupo del local</label><select id="m-home-group" onchange="fillTeamSelects()"><option value="A">Grupo A</option><option value="B">Grupo B</option><option value="">Todos los grupos</option><option value="unassigned">Sin grupo</option></select></div>
       <div><label>Grupo del visitante</label><select id="m-away-group" onchange="fillTeamSelects()"><option value="A">Grupo A</option><option value="B">Grupo B</option><option value="">Todos los grupos</option><option value="unassigned">Sin grupo</option></select></div>
       <div><label>Local</label><select id="m-home"></select></div>
@@ -1218,8 +1218,8 @@ function checkPlayerConflict(teamId){
 }
 function rosterHtml(teamId){
   const players = sortedPlayers().filter(p=>p.team===teamId);
-  const list = players.length ? `<div class="table-wrap"><table><thead><tr><th>Jugador</th><th>Nacimiento</th>${canSeeDocs()?'<th>Documento</th>':''}<th></th></tr></thead><tbody>
-    ${players.map(p=>`<tr><td class="team-a">${esc(p.name)}${!p.name.includes(',')?'<small style="display:block;color:var(--muted)">Apellidos pendientes de separar</small>':''}</td><td>${p.birthdate||'—'}</td>${canSeeDocs()?`<td>${esc(p.document)||'—'}</td>`:''}
+  const list = players.length ? `<div class="table-wrap"><table><thead><tr><th>Nombre y apellido</th>${canSeeDocs()?'<th>N.º de cédula</th>':''}<th></th></tr></thead><tbody>
+    ${players.map(p=>`<tr><td class="team-a">${esc(p.name)}</td>${canSeeDocs()?`<td>${esc(p.document)||'—'}</td>`:''}
       <td class="actions">${isAdmin?`<button class="link" onclick="editPlayerInline('${p.id}')">Editar</button>`:''}${isAdmin?`<button class="link danger" onclick="deletePlayer('${p.id}')">Borrar</button>`:''}</td></tr>`).join('')}
     </tbody></table></div>` : '<p class="empty">Sin jugadores cargados.</p>';
   const form = canEditTeam(teamId) ? `
@@ -1228,8 +1228,7 @@ function rosterHtml(teamId){
       <div class="grid">
         <div><label>Apellidos</label><input id="rp-surname-${teamId}" oninput="checkPlayerConflict('${teamId}')"></div>
         <div><label>Nombres</label><input id="rp-name-${teamId}" oninput="checkPlayerConflict('${teamId}')"></div>
-        <div><label>Fecha de nacimiento</label><input type="date" id="rp-birthdate-${teamId}"></div>
-        <div><label>Documento</label><input id="rp-document-${teamId}" oninput="checkPlayerConflict('${teamId}')"></div>
+        <div><label>N.º de cédula</label><input id="rp-document-${teamId}" oninput="checkPlayerConflict('${teamId}')"></div>
       </div>
       <p class="empty" id="rp-dup-${teamId}" style="display:none"></p>
       <div class="row">
@@ -1256,7 +1255,7 @@ async function savePlayerFor(teamId){
   const name=surname+', '+given;
   if(!name||checkPlayerConflict(teamId))return;
   const id=editingPlayerId||fbPlayersRef.child('byId').push().key;
-  const data={id,name,team:teamId,birthdate:document.getElementById('rp-birthdate-'+teamId).value,document:document.getElementById('rp-document-'+teamId).value.trim()};
+  const data={id,name,team:teamId,document:document.getElementById('rp-document-'+teamId).value.trim()};
   const button=document.getElementById('rp-save-'+teamId);button.disabled=true;
   try{
     // Una sola ficha por escritura: no se reemplaza el plantel de otros clubes.
@@ -1278,7 +1277,7 @@ async function savePlayerFor(teamId){
 function cancelPlayerEditFor(teamId){
   editingPlayerId = null;
   const closedForm=document.getElementById('rp-closed-edit-'+teamId);if(closedForm)closedForm.style.display='none';
-  ['rp-name','rp-surname','rp-birthdate','rp-document'].forEach(pfx=>{ const e=document.getElementById(pfx+'-'+teamId); if(e) e.value=''; });
+  ['rp-name','rp-surname','rp-document'].forEach(pfx=>{ const e=document.getElementById(pfx+'-'+teamId); if(e) e.value=''; });
   const warn = document.getElementById('rp-dup-'+teamId); if(warn) warn.style.display='none';
   const saveBtn = document.getElementById('rp-save-'+teamId); if(saveBtn) saveBtn.disabled=false;
   const title = document.getElementById('rp-title-'+teamId); if(title) title.textContent='Agregar jugador';
@@ -1294,7 +1293,6 @@ function editPlayerInline(id){
   const parts=playerNameParts(p.name);
   document.getElementById('rp-name-'+p.team).value = parts.given;
   document.getElementById('rp-surname-'+p.team).value = parts.surname;
-  document.getElementById('rp-birthdate-'+p.team).value = p.birthdate||'';
   document.getElementById('rp-document-'+p.team).value = p.document||'';
   document.getElementById('rp-title-'+p.team).textContent = 'Editar jugador';
   document.getElementById('rp-cancel-'+p.team).style.display = 'inline-block';
@@ -1509,7 +1507,7 @@ function matchPhaseLabel(m){
 }
 function matchTimeLabel(m){
   if(!m.time) return '';
-  return m.time+(m.endTime?' – '+m.endTime+(m.endNextDay?' (+1 día)':''):'');
+  return m.time+(m.endTime?' – '+m.endTime:'');
 }
 function matchBucketKey(m){ return matchRound(m)+'|'+(isGroupPhase(m.phase)?'grupos':m.phase)+'|'+(m.phase==='octavos'?(m.leg||1):''); }
 function matchBuckets(matches){
@@ -1574,7 +1572,7 @@ function resetMatchForm(){
   document.getElementById('m-phase').value='grupos';
   const currentGroups=state.matches.filter(m=>isGroupPhase(m.phase));
   document.getElementById('m-round').value=currentGroups.length?Math.max(...currentGroups.map(matchRound)):1;
-  document.getElementById('m-end-next-day').checked=false;
+  document.getElementById('m-wo').checked=false;
   const defaultGroup=state.teams.some(t=>t.group==='A')?'A':state.teams.some(t=>t.group==='B')?'B':'';
   document.getElementById('m-home-group').value=defaultGroup;
   document.getElementById('m-away-group').value=defaultGroup;
@@ -1606,7 +1604,7 @@ function editMatch(id){
   fillTeamSelects();
   document.getElementById('m-round').value=matchRound(m);
   document.getElementById('m-end-time').value=m.endTime||'';
-  document.getElementById('m-end-next-day').checked=!!m.endNextDay;
+  document.getElementById('m-wo').checked=!!m.wo;
   const phaseSelect=document.getElementById('m-phase');
   if(![...phaseSelect.options].some(o=>o.value===(m.phase||'grupos'))){
     const option=document.createElement('option');option.value=m.phase;option.textContent=isGroupPhase(m.phase)?'Fase de grupos · '+m.phase.replace('fecha_','Fecha '):m.phase;phaseSelect.appendChild(option);
@@ -1644,16 +1642,21 @@ function saveMatch(){
   }
   if(home && away && home===away){ err.textContent='Los equipos tienen que ser distintos.'; err.style.display='block'; return; }
   const roundNumber=Number(document.getElementById('m-round').value);
-  const time=document.getElementById('m-time').value,endTime=document.getElementById('m-end-time').value,endNextDay=document.getElementById('m-end-next-day').checked;
+  const time=document.getElementById('m-time').value,endTime=document.getElementById('m-end-time').value,wo=document.getElementById('m-wo').checked;
   if(!Number.isSafeInteger(roundNumber)||roundNumber<1){err.textContent='Ingresá un número de fecha entero mayor que cero.';err.style.display='block';return;}
-  if((endTime&&!time)||(endNextDay&&(!time||!endTime))||(time&&endTime&&!endNextDay&&endTime<=time)){
-    err.textContent='Indicá el comienzo y una finalización posterior. Si termina después de medianoche, marcá «Finaliza al día siguiente».';err.style.display='block';return;
+  if((endTime&&!time)||(time&&endTime&&endTime<=time)){
+    err.textContent='Indicá el comienzo y una finalización posterior.';err.style.display='block';return;
   }
   const num = id=>{ const v=document.getElementById(id).value; return v===''?null:parseInt(v); };
-  const data = {roundNumber, endTime, endNextDay, date:document.getElementById('m-date').value, time, home, away, hscore:num('m-hscore'), ascore:num('m-ascore'), hpen:num('m-hpen'), apen:num('m-apen'), phase, protest:document.getElementById('m-protest').checked};
+  let hscore=num('m-hscore'), ascore=num('m-ascore');
+  if(wo){
+    if(hscore===null||ascore===null||hscore===ascore){err.textContent='Para aplicar W.O., cargá un resultado con un ganador claro.';err.style.display='block';return;}
+    if(hscore>ascore){hscore=Math.max(3,hscore);ascore=0;}else{ascore=Math.max(3,ascore);hscore=0;}
+  }
+  const data = {roundNumber, endTime, endNextDay:false, wo, date:document.getElementById('m-date').value, time, home, away, hscore, ascore, hpen:num('m-hpen'), apen:num('m-apen'), phase, protest:document.getElementById('m-protest').checked};
   const existing = editingMatchId ? state.matches.find(x=>x.id===editingMatchId) : null;
   if(existing && resultIsLocked(existing)){
-    const protectedFields=['hscore','ascore','hpen','apen','home','away','phase','protest'];
+    const protectedFields=['hscore','ascore','hpen','apen','home','away','phase','protest','wo'];
     if(protectedFields.some(k=>(existing[k]??(k==='protest'?false:null))!==(data[k]??(k==='protest'?false:null))) || matchRound(existing)!==roundNumber){
       err.textContent='Resultado bloqueado: ya se cargó un resultado de una jornada posterior. Solo podés corregir el día y el horario.';err.style.display='block';return;
     }
@@ -1780,7 +1783,7 @@ function renderDetail(){
       <div style="font-size:1.8rem;font-weight:700;white-space:nowrap">${played? m.hscore+' - '+m.ascore : 'vs'}</div>
       <div style="flex:1" class="team-a">${esc(teamName(m.away))}</div>
     </div>
-    ${played?`<p class="empty" style="text-align:center;margin:0">Finalizado${pens?' — penales '+m.hpen+' - '+m.apen:''}</p>`:''}
+    ${played?`<p class="empty" style="text-align:center;margin:0">${m.wo?'Finalizado por W.O. (walkover)':'Finalizado'}${pens?' — penales '+m.hpen+' - '+m.apen:''}</p>`:''}
     ${m.protest?'<p class="empty">* Partido protestado</p>':''}
     ${goals.length?`<p class="fase-h">Goles</p>${goals.map(g=>`<div>⚽ ${esc(playerName(g.player))} <span class="empty">(${esc(teamName(playerTeam(g.player)))})</span>${g.goals>1?' x'+g.goals:''}</div>`).join('')}`:''}
     ${cards.length?`<p class="fase-h">Tarjetas</p>${cards.map(c=>`<div>${c.type==='Roja'?'🟥':'🟨'} ${esc(playerName(c.player))} <span class="empty">(${esc(teamName(playerTeam(c.player)))})</span></div>`).join('')}`:''}
@@ -1807,7 +1810,7 @@ function resultRow(m){
   return `<div class="mrow" onclick="openMatchDetail('${m.id}')">
     <div class="mdate">${fmtDate(m.date)}<br>${esc(matchTimeLabel(m))}</div>
     <div class="mteams"><div class="${b(m.home)}">${esc(teamName(m.home))}</div><div class="${b(m.away)}">${esc(teamName(m.away))}</div></div>
-    <div class="mmid">${resultIsLocked(m)?'🔒 Bloqueado':pens?'Tras pen.':''}</div>
+    <div class="mmid">${m.wo?'W.O.':resultIsLocked(m)?'🔒 Bloqueado':pens?'Tras pen.':''}</div>
     <div class="mscore"><div class="${b(m.home)}">${sc(m.hscore,m.hpen)}${m.protest?' *':''}</div><div class="${b(m.away)}">${sc(m.ascore,m.apen)}</div></div>
     <button class="link admin-only" onclick="event.stopPropagation();editMatch('${m.id}')">Editar</button>
   </div>`;
@@ -2401,9 +2404,9 @@ function buildWorkbook(){
   const wb = XLSX.utils.book_new();
   const equipos = sortedTeams().map(t=>({Equipo:t.name, Telefono:t.phone, Email:t.email}));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(equipos), 'Equipos');
-  const jugadores = sortedPlayers().map(p=>{ const r={Jugador:p.name, Equipo:teamName(p.team), FechaNacimiento:p.birthdate}; if(isAdmin) r.Documento=p.document; return r; });
+  const jugadores = sortedPlayers().map(p=>{ const r={Jugador:p.name, Equipo:teamName(p.team)}; if(isAdmin) r['N.º de cédula']=p.document; return r; });
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(jugadores), 'Jugadores');
-  const partidos = state.matches.map(m=>({Jornada:matchRound(m), Fecha:m.date, Comienzo:m.time, Finalizacion:m.endTime||'', FinalizaDiaSiguiente:m.endNextDay?'Sí':'No', Fase:matchPhaseLabel(m), Local:teamName(m.home), Visitante:teamName(m.away), GolesLocal:m.hscore, GolesVisitante:m.ascore, PenalesLocal:m.hpen, PenalesVisitante:m.apen, Protestado:m.protest?'Sí':'No'}));
+  const partidos = state.matches.map(m=>({Jornada:matchRound(m), Fecha:m.date, Comienzo:m.time, Finalizacion:m.endTime||'', W_O:m.wo?'Sí':'No', Fase:matchPhaseLabel(m), Local:teamName(m.home), Visitante:teamName(m.away), GolesLocal:m.hscore, GolesVisitante:m.ascore, PenalesLocal:m.hpen, PenalesVisitante:m.apen, Protestado:m.protest?'Sí':'No'}));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(partidos), 'Partidos');
   const totals = {};
   state.goals.forEach(g=>{ totals[g.player]=(totals[g.player]||0)+g.goals; });
@@ -2617,7 +2620,7 @@ function buildSecurityRules(adminUid){
       'v':{'.write':admin,'.validate':'newData.val() === 2'},
       'byId':{'$player':{
         '.write':playerWrite,
-        '.validate':"newData.hasChildren(['id','name','team']) && (("+admin+") || newData.hasChildren(['birthdate','document']))",
+        '.validate':"newData.hasChildren(['id','name','team']) && (("+admin+") || newData.hasChildren(['document']))",
         'id':field('newData.isString() && newData.val() === $player'),
         'name':field('newData.isString() && newData.val().length > 0 && newData.val().length <= 120'),
         'team':field('newData.isString() && newData.val().length > 0'),
