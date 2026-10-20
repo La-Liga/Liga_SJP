@@ -118,6 +118,8 @@ sup{font-size:.7em;color:var(--muted);margin-left:2px;}
 :root[data-theme="black"]{color-scheme:dark;--bg:#080808;--surface:#191919;--border:#383838;--text:#f5f5f5;--muted:#aaa;--primary:#86c8ff;--primary-text:#101010;--danger:#ff938a;--pending:#ffd479;}
 :root[data-theme="white"]{color-scheme:light;--bg:#f5f6f7;--surface:#fff;--border:#dadfe3;--text:#102a33;--muted:#626d72;--primary:#00639b;--primary-text:#fff;--danger:#ba2545;--pending:#906200;}
 .club-badge{width:40px;height:40px;object-fit:contain;vertical-align:middle;margin-right:7px;flex-shrink:0;}
+/* Escudos grandes únicamente en la pestaña Equipos */
+#teams-list .club-badge{width:60px;height:60px;min-width:60px;flex:0 0 60px;object-fit:contain;}
 .bracket-rounds{display:flex;overflow-x:auto;gap:6px;padding:8px;background:var(--bg);border-radius:12px;margin:12px 0;}
 .bracket-rounds button{white-space:nowrap;flex-shrink:0;}
 .bracket-rounds .active{background:var(--surface);color:var(--primary);border-color:var(--primary);}
