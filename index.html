@@ -777,7 +777,9 @@ async function persist(playerWrites={}){
     clearOfflineDraft();persistLocal();setSyncStatus('✅ Sincronizado en tiempo real');return true;
   }catch(e){
     saveOfflineDraft();
-    setSyncStatus('⚠ No se pudo confirmar en el servidor. El cambio quedó guardado localmente; revisá la sincronización antes de seguir editando.');
+    const detail = e && (e.code || e.message) ? String(e.code ? e.code + ': ' : '') + String(e.message || '') : 'Error desconocido';
+    console.error('Error de sincronización Firebase:', e);
+    setSyncStatus('⚠ No se pudo confirmar en el servidor. El cambio quedó guardado localmente. Detalle: ' + detail);
     return false;
   }
 }
