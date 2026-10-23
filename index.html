@@ -293,6 +293,7 @@ body{animation:app-content-enter .24s ease-out;}
     <button class="tab-btn" data-tab="equipos">Equipos</button>
     <button class="tab-btn" data-tab="transferencias">Transferencia</button>
     <button class="tab-btn" data-tab="reglamento">Reglamentos</button>
+    <button class="tab-btn" data-tab="auditoria">Auditoría</button>
   </nav>
 
   <!-- EQUIPOS -->
@@ -405,6 +406,7 @@ body{animation:app-content-enter .24s ease-out;}
   </div>
 
   <!-- REGLAMENTO -->
+  <div class="panel" id="panel-auditoria"><div class="card"><h2>Auditoría de cambios</h2><p class="empty">Registra fecha, usuario y módulos afectados. No reemplaza todavía un registro inmutable del servidor.</p><div id="audit-view"></div><button class="btn ghost admin-only" onclick="downloadAuditLog()">Exportar auditoría</button></div></div>
   <div class="panel" id="panel-reglamento">
     <div class="card admin-only">
       <h2>Subir reglamento (PDF, máx. 50 MB)</h2>
@@ -594,7 +596,7 @@ const firebaseConfig = {
 };
 // Cuenta de administrador (se crea en Firebase > Authentication > Correo y contraseña).
 // La contraseña NO está en el código: la escribís vos al ingresar.
-const ADMIN_EMAILS = ['frafaelsilvero@gmail.com', 'gladysrodriguez2603@gmail.com'];
+const ADMIN_EMAILS = ['gladysrodriguez2603@gmail.com', 'frafaelsilvero@gmail.com'];
 function isAdminEmail(email){ return !!email && ADMIN_EMAILS.includes(String(email).trim().toLowerCase()); }
 let fbRef = null, fbPlayersRef = null, fbDb2 = null, fbReady = false;
 let syncListeners = [];
@@ -774,10 +776,7 @@ async function persist(playerWrites={}){
     clearOfflineDraft();persistLocal();setSyncStatus('✅ Sincronizado en tiempo real');return true;
   }catch(e){
     saveOfflineDraft();
-    const code=String(e?.code||'').replace(/^database\//,'');
-    const detail=code ? ' ('+code+')' : (e?.message ? ' ('+String(e.message).slice(0,140)+')' : '');
-    setSyncStatus('⚠ Firebase no confirmó el guardado'+detail+'. El cambio se conservó localmente; descargá una copia y revisá las reglas/permisos antes de seguir editando.');
-    console.error('[Liga SJP] Error al sincronizar:',e);
+    setSyncStatus('⚠ No se pudo confirmar en el servidor. El cambio quedó guardado localmente; revisá la sincronización antes de seguir editando.');
     return false;
   }
 }
@@ -938,10 +937,10 @@ function registrationClosed(teamId){
   return state.registrationOpen?.[teamId]===false || !!state.registrationClosedTeams?.[teamId] || teamPlayedCount(teamId)>=5;
 }
 function latestResultRound(){
-  return Math.max(Number(state.resultRoundReached)||0,0,...state.matches.filter(m=>m.phase!=='recopa'&&isPlayed(m)).map(matchRound));
+  return Math.max(0,...state.matches.filter(m=>m.phase!=='recopa'&&isPlayed(m)).map(matchRound));
 }
 function resultIsLocked(m){
-  return !!m && (m.resultLocked===true || (m.phase!=='recopa' && isPlayed(m) && matchRound(m)<latestResultRound()));
+  return !!m && m.phase!=='recopa' && isPlayed(m) && matchRound(m)<latestResultRound();
 }
 function sealCompetitionRules(){
   state.registrationClosedTeams=state.registrationClosedTeams||{};
@@ -968,7 +967,7 @@ function applyAdmin(){
   document.getElementById('admin-locked').style.display = isAdmin?'none':'block';
   document.getElementById('admin-unlocked').style.display = isAdmin?'block':'none';
   const sessionEmail=document.getElementById('admin-session-email');
-  if(sessionEmail){const user=fbDb2?firebase.auth().currentUser:null;const email=(user?.email||'').toLowerCase();const adminLabel=(email==='frafaelsilvero@gmail.com'||email==='gladysrodriguez2603@gmail.com')?'Administrador autorizado':'Administrador';sessionEmail.textContent=isAdmin?'Sesión activa · '+adminLabel:'Sesión sin privilegios de administrador';}
+  if(sessionEmail){const user=fbDb2?firebase.auth().currentUser:null;const email=(user?.email||'').toLowerCase();const adminLabel=email==='gladysrodriguez2603@gmail.com'?'Administradora autorizada':(email==='frafaelsilvero@gmail.com'?'Administrador autorizado':'Administrador');sessionEmail.textContent=isAdmin?'Sesión activa · '+adminLabel:'Sesión sin privilegios de administrador';}
   const addCard = document.getElementById('team-add-card');
   if(addCard) addCard.style.display = isAdmin ? 'block' : 'none';
   fillTransferSelects();
@@ -1088,6 +1087,7 @@ document.querySelectorAll('.tab-btn').forEach(b=>{
     if(b.dataset.tab==='partidos') fillTeamSelects();
     if(b.dataset.tab==='resultados') renderResultados();
     if(b.dataset.tab==='eliminatorias') renderBracket();
+    if(b.dataset.tab==='auditoria') renderAuditLog();
     if(b.dataset.tab==='goleadores') renderGoals();
     if(b.dataset.tab==='transferencias'){ renderWindows(); renderTransfers(); }
     if(b.dataset.tab==='disciplina'){ renderCards(); renderFines(); }
@@ -2578,8 +2578,8 @@ async function linkExistingDelegate(){
 }
 const badgeRuleSnippet={
   "liga-delegados":{
-    ".read":"auth != null && (auth.token.email === 'frafaelsilvero@gmail.com' || auth.token.email === 'gladysrodriguez2603@gmail.com')",
-    ".write":"auth != null && (auth.token.email === 'frafaelsilvero@gmail.com' || auth.token.email === 'gladysrodriguez2603@gmail.com')",
+    ".read":"auth != null && auth.token.email === 'gladysrodriguez2603@gmail.com'",
+    ".write":"auth != null && auth.token.email === 'gladysrodriguez2603@gmail.com'",
     "$uid":{
       ".read":"auth != null && auth.uid === $uid",
       ".validate":"newData.hasChildren(['team','email'])",
@@ -2591,7 +2591,7 @@ const badgeRuleSnippet={
   "liga-insignias":{
     ".read":"auth != null",
     "$club":{
-      ".write":"auth != null && ((auth.token.email === 'frafaelsilvero@gmail.com' || auth.token.email === 'gladysrodriguez2603@gmail.com') || (auth.token.firebase.sign_in_provider === 'password' && root.child('liga-delegados').child(auth.uid).child('team').val() === $club))",
+      ".write":"auth != null && (auth.token.email === 'gladysrodriguez2603@gmail.com' || (auth.token.firebase.sign_in_provider === 'password' && root.child('liga-delegados').child(auth.uid).child('team').val() === $club))",
       ".validate":"newData.hasChildren(['image','updatedAt'])",
       "image":{".validate":"newData.isString() && newData.val().length < 180000 && newData.val().beginsWith('data:image/png;base64,')"},
       "updatedAt":{".validate":"newData.isNumber() && newData.val() === now"},
@@ -2600,7 +2600,7 @@ const badgeRuleSnippet={
   }
 };
 function buildSecurityRules(adminUid){
-  const admin="auth != null && (auth.uid === '"+adminUid+"' || auth.token.email === 'frafaelsilvero@gmail.com' || auth.token.email === 'gladysrodriguez2603@gmail.com')";
+  const admin="auth != null && (auth.token.email === 'gladysrodriguez2603@gmail.com' || auth.token.email === 'frafaelsilvero@gmail.com')";
   const additions=JSON.parse(JSON.stringify(badgeRuleSnippet));
   additions['liga-delegados']['.read']=admin;
   additions['liga-delegados']['.write']=admin;
@@ -2610,7 +2610,7 @@ function buildSecurityRules(adminUid){
   const field=(condition)=>({'.validate':'('+admin+') || ('+condition+')'});
   const areaWrite={};
   ['teams','goals','windows','transfers','cards','fines','settings','tournaments','bracketOrder','reglamento','suspensionsServed','auditLog','resultRoundReached'].forEach(k=>areaWrite[k]={'.write':admin});
-  areaWrite.matches={'$matchIndex':{'.write':admin+" && (!data.exists() || data.child('resultLocked').val() !== true || (newData.child('resultLocked').val() === true && newData.child('hscore').val() === data.child('hscore').val() && newData.child('ascore').val() === data.child('ascore').val() && newData.child('hpen').val() === data.child('hpen').val() && newData.child('apen').val() === data.child('apen').val() && newData.child('home').val() === data.child('home').val() && newData.child('away').val() === data.child('away').val() && newData.child('phase').val() === data.child('phase').val()))"}};
+  areaWrite.matches={'$matchIndex':{'.write':admin+" && (!data.exists() || data.child('resultLocked').val() !== true || (newData.child('hscore').val() === data.child('hscore').val() && newData.child('ascore').val() === data.child('ascore').val() && newData.child('hpen').val() === data.child('hpen').val() && newData.child('apen').val() === data.child('apen').val() && newData.child('home').val() === data.child('home').val() && newData.child('away').val() === data.child('away').val() && newData.child('phase').val() === data.child('phase').val() && newData.child('resultLocked').val() === data.child('resultLocked').val()))"}};
   areaWrite.registrationClosedTeams={
     '$team':{'.write':admin+" && newData.val() === true",'.validate':'newData.val() === true'}
   };
