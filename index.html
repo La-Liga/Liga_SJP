@@ -753,10 +753,25 @@ async function persist(playerWrites={}){
         if(stableStringify(before[i]??null)===stableStringify(after[i]??null))continue;
         const expected=before[i]??null,desired=after[i]??null;
         const tx=await fbRef.child('matches').child(String(i)).transaction(current=>{
-          if(stableStringify(current??null)!==stableStringify(expected))return;
+          // Si otro cliente cambió el partido, no sobrescribir sus cambios. Sin embargo,
+          // una edición exclusiva de fecha/horario se puede combinar con el estado remoto.
+          if(stableStringify(current??null)!==stableStringify(expected)){
+            if(!current || !expected || !desired) return;
+            const dateFields=['date','time','endTime'];
+            const otherKeys=new Set([...Object.keys(expected),...Object.keys(desired)]);
+            const onlyScheduleChanged=[...otherKeys].every(k=>dateFields.includes(k) || stableStringify(expected[k]??null)===stableStringify(desired[k]??null));
+            if(!onlyScheduleChanged) return;
+            const merged={...current};
+            dateFields.forEach(k=>{
+              if(stableStringify(expected[k]??null)!==stableStringify(desired[k]??null)){
+                if(desired[k]===undefined) delete merged[k]; else merged[k]=desired[k];
+              }
+            });
+            return merged;
+          }
           return desired===null?null:desired;
         },undefined,false);
-        if(!tx.committed)throw new Error('Conflicto o resultado bloqueado en el partido '+(i+1)+'.');
+        if(!tx.committed)throw new Error('Firebase rechazó el partido '+(i+1)+': hay un cambio concurrente o una regla de seguridad impide guardar. No se modificó el resultado automáticamente.');
       }
     }
     for(const key of keys){
@@ -776,7 +791,8 @@ async function persist(playerWrites={}){
     clearOfflineDraft();persistLocal();setSyncStatus('✅ Sincronizado en tiempo real');return true;
   }catch(e){
     saveOfflineDraft();
-    setSyncStatus('⚠ No se pudo confirmar en el servidor. El cambio quedó guardado localmente; revisá la sincronización antes de seguir editando.');
+    setSyncStatus('⚠ No se pudo confirmar en el servidor: '+(e?.message||'error desconocido')+'. El cambio quedó guardado localmente; descargá una copia antes de continuar.');
+    console.error('[Liga SJP] Error al sincronizar:',e);
     return false;
   }
 }
