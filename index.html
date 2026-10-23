@@ -2610,7 +2610,7 @@ function buildSecurityRules(adminUid){
   const field=(condition)=>({'.validate':'('+admin+') || ('+condition+')'});
   const areaWrite={};
   ['teams','goals','windows','transfers','cards','fines','settings','tournaments','bracketOrder','reglamento','suspensionsServed','auditLog','resultRoundReached'].forEach(k=>areaWrite[k]={'.write':admin});
-  areaWrite.matches={'$matchIndex':{'.write':admin+" && (!data.exists() || data.child('resultLocked').val() !== true || (data.child('resultLocked').val() !== true && newData.child('resultLocked').val() === true && newData.child('hscore').val() === data.child('hscore').val() && newData.child('ascore').val() === data.child('ascore').val() && newData.child('hpen').val() === data.child('hpen').val() && newData.child('apen').val() === data.child('apen').val() && newData.child('home').val() === data.child('home').val() && newData.child('away').val() === data.child('away').val() && newData.child('phase').val() === data.child('phase').val()))"}};
+  areaWrite.matches={'$matchIndex':{'.write':admin+" && (!data.exists() || data.child('resultLocked').val() !== true || (newData.child('resultLocked').val() === true && newData.child('hscore').val() === data.child('hscore').val() && newData.child('ascore').val() === data.child('ascore').val() && newData.child('hpen').val() === data.child('hpen').val() && newData.child('apen').val() === data.child('apen').val() && newData.child('home').val() === data.child('home').val() && newData.child('away').val() === data.child('away').val() && newData.child('phase').val() === data.child('phase').val()))"}};
   areaWrite.registrationClosedTeams={
     '$team':{'.write':admin+" && newData.val() === true",'.validate':'newData.val() === true'}
   };
