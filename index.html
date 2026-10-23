@@ -491,6 +491,7 @@ function normalizeState(s){
   s.teams = s.teams || []; s.matches = s.matches || []; s.players = s.players || [];
   s.goals = s.goals || []; s.windows = s.windows || []; s.transfers = s.transfers || [];
   s.cards = s.cards || []; s.fines = s.fines || []; s.suspensionsServed = s.suspensionsServed || {};
+  s.auditLog = Array.isArray(s.auditLog) ? s.auditLog : [];
   s.schemaVersion = Number.isInteger(s.schemaVersion) ? s.schemaVersion : 2;
   s.settings = s.settings || {};
   s.settings.activeTournamentId = s.settings.activeTournamentId || ('torneo-' + Date.now().toString(36));
@@ -593,7 +594,8 @@ const firebaseConfig = {
 };
 // Cuenta de administrador (se crea en Firebase > Authentication > Correo y contraseña).
 // La contraseña NO está en el código: la escribís vos al ingresar.
-const ADMIN_EMAILS = ['gladysrodriguez2603@gmail.com', 'frafaelsilvero@gmail.com'];
+const ADMIN_EMAIL = 'admin@liga-sjp.app';
+const ADMIN_EMAILS = [ADMIN_EMAIL, 'frafaelsilvero@gmail.com', 'gladysrodriguez2603@gmail.com'];
 function isAdminEmail(email){ return !!email && ADMIN_EMAILS.includes(String(email).trim().toLowerCase()); }
 let fbRef = null, fbPlayersRef = null, fbDb2 = null, fbReady = false;
 let syncListeners = [];
@@ -661,7 +663,7 @@ function registrationPolicy(main){
 }
 function mainForSave(){
   sealCompetitionRules();
-  const main=cleanData(state);delete main.players;delete main.auditLog;
+  const main=cleanData(state);delete main.players;
   // Conserva la ubicación antigua hasta completar la migración explícita.
   if(!playersAreMigrated() && remoteMain?.players)main.players=cleanData(remoteMain.players);
   // registrationOpen es un dato derivado del índice; no se publica desde el cliente.
@@ -686,7 +688,31 @@ function mainStateSnapshot(value){
   delete snapshot.players;
   return snapshot;
 }
-
+function auditActor(){
+  try{const u=firebase.auth().currentUser;return (u?.email||u?.uid||'sesión local').toString().slice(0,160);}catch{return 'sesión local';}
+}
+function changedStateAreas(before,after){
+  const a=before||{},b=after||{};
+  const keys=['teams','matches','players','goals','windows','transfers','cards','fines','settings','tournaments','registrationOpen','registrationClosedTeams','bracketOrder','reglamento','suspensionsServed'];
+  return keys.filter(k=>stableStringify(a[k]??null)!==stableStringify(b[k]??null));
+}
+function appendAuditEntry(areas,action='Guardar cambios'){
+  if(!Array.isArray(state.auditLog))state.auditLog=[];
+  const entry={id:'aud-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,7),at:new Date().toISOString(),actor:auditActor(),action:String(action).slice(0,100),areas:(areas||[]).slice(0,30),tournamentId:state.settings?.activeTournamentId||null};
+  state.auditLog.push(entry);
+  if(state.auditLog.length>500)state.auditLog=state.auditLog.slice(-500);
+  return entry;
+}
+function renderAuditLog(){
+  const el=document.getElementById('audit-view');if(!el)return;
+  const rows=[...(state.auditLog||[])].reverse();
+  el.innerHTML=rows.length?`<div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Módulos</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${esc(x.at?new Date(x.at).toLocaleString('es-PY'): '—')}</td><td>${esc(x.actor||'—')}</td><td>${esc(x.action||'Cambio')}</td><td>${esc((x.areas||[]).join(', ')||'—')}</td></tr>`).join('')}</tbody></table></div>`:'<p class="empty">Todavía no hay cambios registrados.</p>';
+}
+function downloadAuditLog(){
+  if(!isAdmin)return;
+  const blob=new Blob([JSON.stringify({schemaVersion:1,exportedAt:new Date().toISOString(),entries:state.auditLog||[]},null,2)],{type:'application/json;charset=utf-8'});
+  const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='liga-sjp-auditoria.json';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+}
 async function persist(playerWrites={}){
   // Guardar primero en el dispositivo para conservar el cambio si falla la red.
   persistLocal();
@@ -702,6 +728,8 @@ async function persist(playerWrites={}){
       return false;
     }
     const lastSeen=lastAppliedRemoteMain||null;
+    const changedAreas=changedStateAreas(lastAppliedStateMain,mainStateSnapshot(state));
+    // Auditoría desactivada: no generar nuevas entradas automáticamente.
     const mainToSave=mainForSave();
     // Ya no se escribe la raíz liga-data: cada área se guarda en su propio nodo.
     // El cierre de inscripción se escribe primero y solo puede avanzar (false/ausente -> true).
@@ -724,25 +752,10 @@ async function persist(playerWrites={}){
         if(stableStringify(before[i]??null)===stableStringify(after[i]??null))continue;
         const expected=before[i]??null,desired=after[i]??null;
         const tx=await fbRef.child('matches').child(String(i)).transaction(current=>{
-          // Si otro cliente cambió el partido, no sobrescribir sus cambios. Sin embargo,
-          // una edición exclusiva de fecha/horario se puede combinar con el estado remoto.
-          if(stableStringify(current??null)!==stableStringify(expected)){
-            if(!current || !expected || !desired) return;
-            const dateFields=['date','time','endTime'];
-            const otherKeys=new Set([...Object.keys(expected),...Object.keys(desired)]);
-            const onlyScheduleChanged=[...otherKeys].every(k=>dateFields.includes(k) || stableStringify(expected[k]??null)===stableStringify(desired[k]??null));
-            if(!onlyScheduleChanged) return;
-            const merged={...current};
-            dateFields.forEach(k=>{
-              if(stableStringify(expected[k]??null)!==stableStringify(desired[k]??null)){
-                if(desired[k]===undefined) delete merged[k]; else merged[k]=desired[k];
-              }
-            });
-            return merged;
-          }
+          if(stableStringify(current??null)!==stableStringify(expected))return;
           return desired===null?null:desired;
         },undefined,false);
-        if(!tx.committed)throw new Error('Firebase rechazó el partido '+(i+1)+': hay un cambio concurrente o una regla de seguridad impide guardar. No se modificó el resultado automáticamente.');
+        if(!tx.committed)throw new Error('Conflicto o resultado bloqueado en el partido '+(i+1)+'.');
       }
     }
     for(const key of keys){
@@ -762,8 +775,7 @@ async function persist(playerWrites={}){
     clearOfflineDraft();persistLocal();setSyncStatus('✅ Sincronizado en tiempo real');return true;
   }catch(e){
     saveOfflineDraft();
-    setSyncStatus('⚠ No se pudo confirmar en el servidor: '+(e?.message||'error desconocido')+'. El cambio quedó guardado localmente; descargá una copia antes de continuar.');
-    console.error('[Liga SJP] Error al sincronizar:',e);
+    setSyncStatus('⚠ No se pudo confirmar en el servidor. El cambio quedó guardado localmente; revisá la sincronización antes de seguir editando.');
     return false;
   }
 }
@@ -842,7 +854,7 @@ function startSync(){
   if(!fbRef) return;
   stopSync();
   mainLoaded = false; playersLoaded = false;
-  const onErr = err=>{ fbReady = true; const code=err?.code||''; const detail=code==='PERMISSION_DENIED'?'Firebase rechazó la lectura (PERMISSION_DENIED). Revisá las reglas publicadas y que Gladys haya iniciado sesión con su cuenta autorizada.':(code==='NETWORK_ERROR'?'No se pudo conectar con Firebase; revisá internet.':'No se pudo leer Firebase'+(code?' ('+code+')':'')+'. Revisá conexión y permisos.'); setSyncStatus('⚠ '+detail+' Los datos locales se conservaron.'); console.error('[Liga SJP] Error de lectura Firebase:',err); }; 
+  const onErr = ()=>{ fbReady = true; setSyncStatus('⚠ Sin conexión — usando datos guardados en este celular'); };
   const cbMain = snap=>{
     remoteMain = snap.val(); mainLoaded = true; fbReady = true;
     applyRemote();
@@ -924,10 +936,10 @@ function registrationClosed(teamId){
   return state.registrationOpen?.[teamId]===false || !!state.registrationClosedTeams?.[teamId] || teamPlayedCount(teamId)>=5;
 }
 function latestResultRound(){
-  return Math.max(0,...state.matches.filter(m=>m.phase!=='recopa'&&isPlayed(m)).map(matchRound));
+  return Math.max(Number(state.resultRoundReached)||0,0,...state.matches.filter(m=>m.phase!=='recopa'&&isPlayed(m)).map(matchRound));
 }
 function resultIsLocked(m){
-  return !!m && m.phase!=='recopa' && isPlayed(m) && matchRound(m)<latestResultRound();
+  return !!m && (m.resultLocked===true || (m.phase!=='recopa' && isPlayed(m) && matchRound(m)<latestResultRound()));
 }
 function sealCompetitionRules(){
   state.registrationClosedTeams=state.registrationClosedTeams||{};
@@ -954,7 +966,7 @@ function applyAdmin(){
   document.getElementById('admin-locked').style.display = isAdmin?'none':'block';
   document.getElementById('admin-unlocked').style.display = isAdmin?'block':'none';
   const sessionEmail=document.getElementById('admin-session-email');
-  if(sessionEmail){const user=fbDb2?firebase.auth().currentUser:null;const email=(user?.email||'').toLowerCase();const adminLabel=email==='gladysrodriguez2603@gmail.com'?'Administradora autorizada':(email==='frafaelsilvero@gmail.com'?'Administrador autorizado':'Administrador');sessionEmail.textContent=isAdmin?'Sesión activa · '+adminLabel:'Sesión sin privilegios de administrador';}
+  if(sessionEmail){const user=fbDb2?firebase.auth().currentUser:null;const email=(user?.email||'').toLowerCase();const adminLabel=email==='admin@liga-sjp.app'?'Administrador principal':(email==='frafaelsilvero@gmail.com'?'Administrador autorizado':'Administrador');sessionEmail.textContent=isAdmin?'Sesión activa · '+adminLabel:'Sesión sin privilegios de administrador';}
   const addCard = document.getElementById('team-add-card');
   if(addCard) addCard.style.display = isAdmin ? 'block' : 'none';
   fillTransferSelects();
@@ -1074,7 +1086,6 @@ document.querySelectorAll('.tab-btn').forEach(b=>{
     if(b.dataset.tab==='partidos') fillTeamSelects();
     if(b.dataset.tab==='resultados') renderResultados();
     if(b.dataset.tab==='eliminatorias') renderBracket();
-    if(b.dataset.tab==='auditoria')
     if(b.dataset.tab==='goleadores') renderGoals();
     if(b.dataset.tab==='transferencias'){ renderWindows(); renderTransfers(); }
     if(b.dataset.tab==='disciplina'){ renderCards(); renderFines(); }
@@ -1296,6 +1307,7 @@ async function deletePlayer(id){
   try{
     // Primero se confirma el cambio de estadísticas. Nunca borrar la ficha si liga-data no se guardó.
     state.goals=(state.goals||[]).filter(g=>g.player!==id);
+    appendAuditEntry(['jugadores','goles'],'Preparar eliminación de jugador');
     const saved=await persist();
     if(!saved){state.goals=beforeGoals;persistLocal();renderGoals();renderTeams();alert('No se borró el jugador porque los cambios de la liga no se confirmaron en el servidor.');return;}
     // La base no permite una transacción atómica entre liga-data y liga-players con estas reglas.
@@ -2564,8 +2576,8 @@ async function linkExistingDelegate(){
 }
 const badgeRuleSnippet={
   "liga-delegados":{
-    ".read":"auth != null && auth.token.email === 'gladysrodriguez2603@gmail.com'",
-    ".write":"auth != null && auth.token.email === 'gladysrodriguez2603@gmail.com'",
+    ".read":"auth != null && auth.token.email === 'admin@liga-sjp.app'",
+    ".write":"auth != null && auth.token.email === 'admin@liga-sjp.app'",
     "$uid":{
       ".read":"auth != null && auth.uid === $uid",
       ".validate":"newData.hasChildren(['team','email'])",
@@ -2577,7 +2589,7 @@ const badgeRuleSnippet={
   "liga-insignias":{
     ".read":"auth != null",
     "$club":{
-      ".write":"auth != null && (auth.token.email === 'gladysrodriguez2603@gmail.com' || (auth.token.firebase.sign_in_provider === 'password' && root.child('liga-delegados').child(auth.uid).child('team').val() === $club))",
+      ".write":"auth != null && (auth.token.email === 'admin@liga-sjp.app' || (auth.token.firebase.sign_in_provider === 'password' && root.child('liga-delegados').child(auth.uid).child('team').val() === $club))",
       ".validate":"newData.hasChildren(['image','updatedAt'])",
       "image":{".validate":"newData.isString() && newData.val().length < 180000 && newData.val().beginsWith('data:image/png;base64,')"},
       "updatedAt":{".validate":"newData.isNumber() && newData.val() === now"},
@@ -2586,7 +2598,7 @@ const badgeRuleSnippet={
   }
 };
 function buildSecurityRules(adminUid){
-  const admin="auth != null && (auth.token.email === 'gladysrodriguez2603@gmail.com' || auth.token.email === 'frafaelsilvero@gmail.com')";
+  const admin="auth != null && (auth.uid === '"+adminUid+"' || auth.token.email === 'admin@liga-sjp.app' || auth.token.email === 'frafaelsilvero@gmail.com')";
   const additions=JSON.parse(JSON.stringify(badgeRuleSnippet));
   additions['liga-delegados']['.read']=admin;
   additions['liga-delegados']['.write']=admin;
@@ -2595,8 +2607,8 @@ function buildSecurityRules(adminUid){
   const playerWrite="("+admin+" && (data.exists() || root.child('liga-data/registrationClosedTeams').child(newData.child('team').val()).val() !== true)) || ("+delegateCreate+")";
   const field=(condition)=>({'.validate':'('+admin+') || ('+condition+')'});
   const areaWrite={};
-  ['teams','goals','windows','transfers','cards','fines','settings','tournaments','bracketOrder','reglamento','suspensionsServed','resultRoundReached'].forEach(k=>areaWrite[k]={'.write':admin});
-  areaWrite.matches={'$matchIndex':{'.write':admin+" && (!data.exists() || data.child('resultLocked').val() !== true || (newData.child('hscore').val() === data.child('hscore').val() && newData.child('ascore').val() === data.child('ascore').val() && newData.child('hpen').val() === data.child('hpen').val() && newData.child('apen').val() === data.child('apen').val() && newData.child('home').val() === data.child('home').val() && newData.child('away').val() === data.child('away').val() && newData.child('phase').val() === data.child('phase').val() && newData.child('resultLocked').val() === data.child('resultLocked').val()))"}};
+  ['teams','goals','windows','transfers','cards','fines','settings','tournaments','bracketOrder','reglamento','suspensionsServed','auditLog','resultRoundReached'].forEach(k=>areaWrite[k]={'.write':admin});
+  areaWrite.matches={'$matchIndex':{'.write':admin+" && (!data.exists() || data.child('resultLocked').val() !== true || (data.child('resultLocked').val() !== true && newData.child('resultLocked').val() === true && newData.child('hscore').val() === data.child('hscore').val() && newData.child('ascore').val() === data.child('ascore').val() && newData.child('hpen').val() === data.child('hpen').val() && newData.child('apen').val() === data.child('apen').val() && newData.child('home').val() === data.child('home').val() && newData.child('away').val() === data.child('away').val() && newData.child('phase').val() === data.child('phase').val()))"}};
   areaWrite.registrationClosedTeams={
     '$team':{'.write':admin+" && newData.val() === true",'.validate':'newData.val() === true'}
   };
@@ -2651,6 +2663,7 @@ renderReglamento();
 renderWindows();
 renderTransfers();
 renderTournamentManager();
+renderAuditLog();
 renderStandings();
 try{ const lb=document.querySelector('.tab-btn[data-tab="tabla"]'); if(lb) lb.click(); }catch(e){}
 </script>
