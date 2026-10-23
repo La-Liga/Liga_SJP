@@ -660,7 +660,8 @@ function registrationPolicy(main){
   return result;
 }
 function mainForSave(){
-  sealCompetitionRules();
+  // No recalcular reglas competitivas aquí: también se llama al guardar goles/tarjetas.
+  // El sellado se realiza en persist() únicamente cuando cambió la lista de partidos.
   const main=cleanData(state);delete main.players;delete main.auditLog;
   // Conserva la ubicación antigua hasta completar la migración explícita.
   if(!playersAreMigrated() && remoteMain?.players)main.players=cleanData(remoteMain.players);
@@ -706,6 +707,13 @@ async function persist(playerWrites={}){
       return false;
     }
     const lastSeen=lastAppliedRemoteMain||null;
+    // Sellar reglas competitivas solo si el estado de los partidos cambió realmente.
+    // Guardar goles o tarjetas no debe provocar escrituras laterales sobre matches.
+    const baselineMatches=lastAppliedStateMain?.matches??null;
+    const currentMatches=state?.matches??null;
+    if(stableStringify(currentMatches)!==stableStringify(baselineMatches)){
+      sealCompetitionRules();
+    }
     const mainToSave=mainForSave();
     // Ya no se escribe la raíz liga-data: cada área se guarda en su propio nodo.
     // El cierre de inscripción se escribe primero y solo puede avanzar (false/ausente -> true).
