@@ -774,7 +774,10 @@ async function persist(playerWrites={}){
     clearOfflineDraft();persistLocal();setSyncStatus('✅ Sincronizado en tiempo real');return true;
   }catch(e){
     saveOfflineDraft();
-    setSyncStatus('⚠ No se pudo confirmar en el servidor. El cambio quedó guardado localmente; revisá la sincronización antes de seguir editando.');
+    const code=String(e?.code||'').replace(/^database\//,'');
+    const detail=code ? ' ('+code+')' : (e?.message ? ' ('+String(e.message).slice(0,140)+')' : '');
+    setSyncStatus('⚠ Firebase no confirmó el guardado'+detail+'. El cambio se conservó localmente; descargá una copia y revisá las reglas/permisos antes de seguir editando.');
+    console.error('[Liga SJP] Error al sincronizar:',e);
     return false;
   }
 }
