@@ -490,7 +490,7 @@ function normalizeState(s){
   s = s || {};
   s.teams = s.teams || []; s.matches = s.matches || []; s.players = s.players || [];
   s.goals = s.goals || []; s.windows = s.windows || []; s.transfers = s.transfers || [];
-  s.cards = s.cards || []; s.fines = s.fines || []; s.suspensionsServed = s.suspensionsServed || {};
+  s.cards = s.cards || []; s.fines = s.fines || []; s.suspensionsServed = s.suspensionsServed || {}; s.carriedSuspensions = s.carriedSuspensions || {}; s.carriedYellows = s.carriedYellows || {};
   s.schemaVersion = Number.isInteger(s.schemaVersion) ? s.schemaVersion : 2;
   s.settings = s.settings || {};
   s.settings.activeTournamentId = s.settings.activeTournamentId || ('torneo-' + Date.now().toString(36));
@@ -609,6 +609,22 @@ try{
 
 function setSyncStatus(txt){ const st=document.getElementById('sync-status'); if(st) st.textContent=txt; refreshPendingDraftTools(); }
 function cleanData(o){ return JSON.parse(JSON.stringify(o)); }
+// Devuelve el dato con la misma forma con la que Firebase lo guarda y lo devuelve: sin valores null ni
+// objetos o listas vacías. Sirve para que la "copia del servidor" coincida con lo que realmente hay allá.
+function serverShape(v){
+  if(v===undefined||v===null) return null;
+  if(Array.isArray(v)) return v.map(serverShape);
+  if(typeof v==='object'){
+    const o={};
+    Object.keys(v).forEach(k=>{
+      const x=serverShape(v[k]);
+      if(x===null||(Array.isArray(x)&&x.every(e=>e===null))||(typeof x==='object'&&!Array.isArray(x)&&Object.keys(x).length===0)) return;
+      o[k]=x;
+    });
+    return o;
+  }
+  return v;
+}
 function refreshPendingDraftTools(){
   const el=document.getElementById('pending-draft-tools');
   if(el) el.style.display=hasOfflineDraft()?'flex':'none';
@@ -639,17 +655,27 @@ function downloadPendingDraft(){
 function discardPendingDraftAndLoadServer(){
   if(!hasOfflineDraft()){refreshPendingDraftTools();return;}
   if(!confirm('Esto descarta la copia pendiente de ESTE dispositivo y carga los datos del servidor. Descargá primero una copia si necesitás conservar esos cambios. ¿Continuar?'))return;
+  loadServerDiscardingDraft();
+}
+// Reemplaza el estado local por el del servidor y reinicia las líneas base de sincronización.
+// Antes se olvidaban las líneas base: el siguiente guardado volvía a fallar con el mismo error.
+function loadServerDiscardingDraft(){
   clearOfflineDraft();
   if(remoteMain||remotePlayers){
-    const merged=Object.assign({},remoteMain||{});
+    const rawRemoteMain=remoteMain?cleanData(remoteMain):null;
+    const merged=Object.assign({},remoteMain?cleanData(remoteMain):{});   // copia propia: el estado nunca comparte objetos con la línea base
     if(remotePlayers)merged.players=playersFromStorage(remotePlayers);
-    state=normalizeState(merged);persistLocal();renderAll();
+    state=normalizeState(merged);persistLocal();
+    lastAppliedRemoteMain=rawRemoteMain;
+    lastAppliedStateMain=mainStateSnapshot(state);
+    renderAll();
     setSyncStatus('✅ Se cargaron los datos actuales del servidor. La copia local pendiente fue descartada.');
   }else{
     setSyncStatus('⚠ Se descartó la marca de cambios pendientes, pero todavía no llegaron datos del servidor. Recargá con conexión.');
   }
   refreshPendingDraftTools();
 }
+function conflictError(message){const e=new Error(message);e.conflict=true;return e;}
 
 function registrationPolicy(main){
   const result={};
@@ -706,7 +732,17 @@ async function persist(playerWrites={}){
       setSyncStatus('⚠ Aún se están cargando los datos del servidor. El cambio quedó guardado localmente; esperá y revisá antes de sincronizar.');
       return false;
     }
-    const lastSeen=lastAppliedRemoteMain||null;
+    // Sin línea base no se puede comparar contra el servidor: no se intenta guardar a ciegas.
+    // (Si la base está realmente vacía, remoteMain es null y la primera escritura sí se permite.)
+    if(remoteMain!==null && (!lastAppliedRemoteMain || !lastAppliedStateMain)){
+      saveOfflineDraft();
+      setSyncStatus('⚠ Este dispositivo todavía no tiene los datos del servidor como referencia. El cambio quedó guardado localmente. Tocá "Descargar copia pendiente" y luego "Descartar copia local y cargar servidor".');
+      return false;
+    }
+    const lastSeen=lastAppliedRemoteMain||(lastAppliedRemoteMain={});
+    // Cada partido lleva el torneo al que pertenece. Las reglas de Firebase lo usan para permitir borrar
+    // partidos bloqueados solo cuando su torneo ya no es el activo (torneo finalizado y archivado).
+    state.matches.forEach(m=>{ if(!m.tournamentId) m.tournamentId=state.settings.activeTournamentId; });
     // Sellar reglas competitivas solo si el estado de los partidos cambió realmente.
     // Guardar goles o tarjetas no debe provocar escrituras laterales sobre matches.
     const baselineMatches=lastAppliedStateMain?.matches??null;
@@ -723,17 +759,42 @@ async function persist(playerWrites={}){
       if(closed===true && previousClosed[teamId]!==true){
         const closeTx=await fbRef.child('registrationClosedTeams').child(teamId).transaction(current=>current===true?true:true,undefined,false);
         if(!closeTx.committed) throw new Error('No se pudo confirmar el cierre de inscripción de '+teamId);
+        (lastSeen.registrationClosedTeams=lastSeen.registrationClosedTeams||{})[teamId]=true;
       }
     }
     const protectedKeys=new Set(['registrationClosedTeams','registrationOpen','players']);
+    // Qué áreas cambiaron: se compara contra lo último cargado en pantalla (ya normalizado), no contra los datos
+    // crudos del servidor; así un área vacía en el servidor y [] en pantalla no cuenta como cambio.
+    const baseState=lastAppliedStateMain||{};
     const keys=[...new Set([...Object.keys(lastSeen||{}),...Object.keys(mainToSave||{})])]
-      .filter(k=>!protectedKeys.has(k) && k!=='auditLog' && k!=='matches' && stableStringify((lastSeen||{})[k]??null)!==stableStringify((mainToSave||{})[k]??null));
+      .filter(k=>!protectedKeys.has(k) && k!=='auditLog' && k!=='matches' && stableStringify(baseState[k]??null)!==stableStringify((mainToSave||{})[k]??null));
+    // Cada área se guarda con su propia transacción. Al terminar cada una se adelanta la línea base local:
+    // si el guardado se corta a la mitad, el reintento solo repite lo que falta y no choca con lo ya escrito.
+    const writeKey=async key=>{
+      const expected=lastSeen[key]??null;
+      const desired=(mainToSave||{})[key];
+      const tx=await fbRef.child(key).transaction(current=>{
+        if(stableStringify(current??null)!==stableStringify(expected)) return;
+        return desired===undefined?null:desired;
+      },undefined,false);
+      if(!tx.committed) throw conflictError('El área "'+key+'" cambió en el servidor y no se puede guardar sin riesgo de sobrescribir cambios ajenos.');
+      const shaped=serverShape(desired);
+      if(shaped===null||shaped===undefined) delete lastSeen[key]; else lastSeen[key]=shaped;
+    };
+    // Primero el torneo activo y el archivo de torneos: las reglas solo permiten borrar los partidos bloqueados
+    // de un torneo anterior después de que el torneo activo cambió y el torneo terminado quedó archivado.
+    const priorityKeys=keys.filter(k=>k==='settings'||k==='tournaments');
+    for(const key of priorityKeys) await writeKey(key);
     // Cada partido se guarda por separado: Firebase puede rechazar la edición de un resultado bloqueado.
-    if(stableStringify((lastSeen||{}).matches??null)!==stableStringify((mainToSave||{}).matches??null)){
+    if(stableStringify(baseState.matches??null)!==stableStringify((mainToSave||{}).matches??null)){
       const before=Array.isArray(lastSeen?.matches)?lastSeen.matches:Object.values(lastSeen?.matches||{});
       const after=Array.isArray(mainToSave?.matches)?mainToSave.matches:Object.values(mainToSave?.matches||{});
+      // Los partidos "sin cambios" se detectan contra la copia normalizada del momento en que se cargó el servidor.
+      // Comparar contra los datos crudos del servidor (sin campos null ni valores por defecto) marcaba TODOS los
+      // partidos como modificados y hacía fallar el guardado por cambios ajenos en partidos que no se habían tocado.
+      const baselineList=Array.isArray(lastAppliedStateMain?.matches)?lastAppliedStateMain.matches:Object.values(lastAppliedStateMain?.matches||{});
       for(let i=0;i<Math.max(before.length,after.length);i++){
-        if(stableStringify(before[i]??null)===stableStringify(after[i]??null))continue;
+        if(stableStringify(baselineList[i]??null)===stableStringify(after[i]??null))continue;
         const expected=before[i]??null,desired=after[i]??null;
         const tx=await fbRef.child('matches').child(String(i)).transaction(current=>{
           // Si otro cliente cambió el partido, no sobrescribir sus cambios. Sin embargo,
@@ -754,28 +815,37 @@ async function persist(playerWrites={}){
           }
           return desired===null?null:desired;
         },undefined,false);
-        if(!tx.committed)throw new Error('Firebase rechazó el partido '+(i+1)+': hay un cambio concurrente o una regla de seguridad impide guardar. No se modificó el resultado automáticamente.');
+        if(!tx.committed)throw conflictError('El partido '+(i+1)+' fue modificado en el servidor por otro administrador o desde otro dispositivo después de que este se cargó. No se pisó nada automáticamente.');
+        if(!Array.isArray(lastSeen.matches)) lastSeen.matches=Object.values(lastSeen.matches||{});
+        lastSeen.matches[i]=desired===null?null:serverShape(desired);
       }
     }
-    for(const key of keys){
-      const expected=(lastSeen||{})[key]??null;
-      const desired=(mainToSave||{})[key];
-      const tx=await fbRef.child(key).transaction(current=>{
-        if(stableStringify(current??null)!==stableStringify(expected)) return;
-        return desired===undefined?null:desired;
-      },undefined,false);
-      if(!tx.committed) throw new Error('Conflicto en el área '+key+'; no se pudo guardar sin riesgo de sobrescribir cambios ajenos.');
-    }
+    for(const key of keys.filter(k=>!priorityKeys.includes(k))) await writeKey(key);
     // Escribir jugadores en su ruta independiente, después de guardar el estado principal.
     if(Object.keys(playerWrites).length) await fbDb2.ref().update(playerWrites);
-    remoteMain=cleanData(mainToSave);
-    lastAppliedRemoteMain=cleanData(mainToSave);
+    // La copia del servidor solo se actualizó con lo que realmente se escribió (partido por partido y área por área).
+    // No se reemplaza por el estado completo de pantalla: tiene valores por defecto que el servidor no tiene.
+    if(Array.isArray(lastSeen.matches)) while(lastSeen.matches.length&&lastSeen.matches[lastSeen.matches.length-1]===null) lastSeen.matches.pop();
+    if(Array.isArray(lastSeen.matches)&&!lastSeen.matches.length) delete lastSeen.matches;
+    lastAppliedRemoteMain=lastSeen;
+    remoteMain=cleanData(lastSeen);
     lastAppliedStateMain=mainStateSnapshot(state);
     clearOfflineDraft();persistLocal();setSyncStatus('✅ Sincronizado en tiempo real');return true;
   }catch(e){
     saveOfflineDraft();
-    setSyncStatus('⚠ No se pudo confirmar en el servidor: '+(e?.message||'error desconocido')+'. El cambio quedó guardado localmente; descargá una copia antes de continuar.');
+    const detail=String(e?.message||'error desconocido').replace(/[.\s]+$/,'');
+    setSyncStatus('⚠ No se pudo confirmar en el servidor: '+detail+'. El cambio quedó guardado localmente; descargá una copia antes de continuar.');
     console.error('[Liga SJP] Error al sincronizar:',e);
+    if(e&&e.conflict){
+      // Un conflicto no se resuelve reintentando: hay que traer los datos actuales del servidor.
+      setTimeout(()=>{
+        if(!hasOfflineDraft())return;
+        if(confirm('Hay datos más nuevos en el servidor y tu cambio no se pudo guardar.\n\nAceptar: se descarga una copia de tu cambio y se cargan los datos actuales del servidor. Después volvé a cargar el cambio.\nCancelar: no se toca nada.')){
+          downloadPendingDraft();
+          loadServerDiscardingDraft();
+        }
+      },100);
+    }
     return false;
   }
 }
@@ -785,6 +855,33 @@ function playersFromStorage(value,fallback=[]){
   return Array.isArray(list)?list.filter(Boolean):Object.values(list||{});
 }
 let playerStorageSetupRunning=false, playerStorageSetupAttempted=false;
+let adminMigrationRunning=false, adminMigrationDone=false;
+// Se ejecuta una vez por sesión de administrador, al terminar de cargar los datos del servidor.
+// Solo agrega datos que las reglas nuevas necesitan; nunca borra ni cambia resultados.
+async function runAdminMigration(){
+  if(!isAdmin||!fbDb2||!mainLoaded||!playersLoaded||remoteMain===null||adminMigrationRunning||adminMigrationDone)return;
+  if(hasOfflineDraft()||!navigator.onLine)return;
+  const sessionUid=firebase.auth().currentUser?.uid;
+  adminMigrationRunning=true;
+  try{
+    // 1) El servidor necesita un identificador de torneo activo.
+    const idTx=await fbRef.child('settings/activeTournamentId').transaction(cur=>cur||state.settings.activeTournamentId,undefined,false);
+    const activeId=idTx.snapshot.val();
+    if(!activeId||!isAdmin||firebase.auth().currentUser?.uid!==sessionUid)return;
+    // 2) Los partidos existentes se etiquetan con el torneo al que pertenecen (solo si todavía no tienen etiqueta).
+    for(const [key,m] of Object.entries(remoteMain.matches||{})){
+      if(m&&m.tournamentId==null) await fbRef.child('matches/'+key+'/tournamentId').transaction(cur=>cur==null?activeId:undefined,undefined,false);
+    }
+    // 3) Los cierres de inscripción vigentes se registran con la clave del torneo activo.
+    const closedNow=remoteMain.registrationClosedTeams||{};
+    for(const t of state.teams){
+      const key=activeId+'_'+t.id;
+      if(registrationClosed(t.id)&&closedNow[key]!==true) await fbRef.child('registrationClosedTeams/'+key).transaction(()=>true,undefined,false);
+    }
+    adminMigrationDone=true;
+  }catch(e){ console.error('[Liga SJP] Preparación de datos del administrador:',e); }
+  finally{ adminMigrationRunning=false; }
+}
 function emptyLegacyPlayerNode(value){
   if(value==null)return true;
   if(typeof value!=='object'||Array.isArray(value))return false;
@@ -826,25 +923,33 @@ function applyRemote(){
   // treat it as unsaved work and never replace it silently with a remote update.
   const localHasUncommittedChanges=lastAppliedStateMain!==null &&
     stableStringify(mainStateSnapshot(state))!==stableStringify(lastAppliedStateMain);
+  // Una copia pendiente sin cambios reales (el estado local coincide con lo último cargado del servidor)
+  // es un resto viejo: si se conservara, bloquearía para siempre la actualización con el servidor.
+  if(hasOfflineDraft() && lastAppliedStateMain!==null && !localHasUncommittedChanges) clearOfflineDraft();
   if(hasOfflineDraft() || localHasUncommittedChanges){
     if(localHasUncommittedChanges && !hasOfflineDraft()) saveOfflineDraft();
     setSyncStatus('⚠ Hay cambios locales pendientes. Se conserva la copia de este dispositivo; descargala antes de descartar o recargar.');
     return;
   }
-  const merged = Object.assign({}, remoteMain || {});
+  // normalizeState modifica el objeto que recibe (agrega valores por defecto, incluso un id de torneo nuevo).
+  // Se trabaja sobre una copia para que remoteMain y la línea base sigan siendo EXACTAMENTE lo que hay en el servidor;
+  // si no, al guardar la app comparaba contra datos que el servidor nunca tuvo y todo se tomaba como "cambio concurrente".
+  const rawRemoteMain = remoteMain ? cleanData(remoteMain) : null;
+  const merged = Object.assign({}, remoteMain ? cleanData(remoteMain) : {});   // copia propia: el estado nunca comparte objetos con la línea base
   if(remotePlayers){
     merged.players=playersFromStorage(remotePlayers);
   }
   if(remoteMain || remotePlayers){
     state = normalizeState(merged);
     persistLocal();
-    lastAppliedRemoteMain=remoteMain?cleanData(remoteMain):null;
+    lastAppliedRemoteMain=rawRemoteMain;
     lastAppliedStateMain=mainStateSnapshot(state);
     renderAll();
     if(mainLoaded && playersLoaded && !hasOfflineDraft()) setSyncStatus('✅ Datos del servidor cargados');
   }
   // Solo prepara automáticamente listas vacías; nunca borra jugadores existentes.
   initializeEmptyPlayerStorage();
+  runAdminMigration();
 }
 function stopSync(){
   syncListeners.forEach(([ref,cb])=>{ try{ ref.off('value', cb); }catch(e){} });
@@ -889,7 +994,7 @@ function startSync(){
 if(fbDb2){
   // Primero la sesión, después la lectura: así las reglas de la base (que exigen sesión) no rechazan la primera carga.
   firebase.auth().onAuthStateChanged(user=>{
-    playerStorageSetupAttempted=false;
+    playerStorageSetupAttempted=false;adminMigrationDone=false;
     trustedDelegateTeam=null;delegateAccounts={};renderDelegateAccess();
     if(!user){
       if(isAdmin){ isAdmin = false; applyAdmin(); }
@@ -909,7 +1014,7 @@ if(fbDb2){
   document.addEventListener('DOMContentLoaded', ()=>{ setSyncStatus('⚠ Sincronización no disponible'); });
 }
 
-function esc(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function fillSelect(id, html){
   const el = document.getElementById(id); if(!el) return;
   const prev = el.value;
@@ -931,9 +1036,15 @@ function teamPlayedCount(teamId){
   // Cuenta partidos con ambos marcadores cargados; los pendientes no cuentan.
   return state.matches.filter(m=>(String(m.home)===String(teamId)||String(m.away)===String(teamId))&&isPlayed(m)).length;
 }
+// El cierre de inscripción es por torneo: la clave incluye el identificador del torneo activo.
+// Así el cierre sigue siendo irreversible dentro de un torneo, pero el torneo siguiente empieza con todos abiertos.
+function closureKey(teamId){ return (state.settings?.activeTournamentId||'')+'_'+teamId; }
 function registrationClosed(teamId){
   // Cierre permanente: no depende del rol (también bloquea al administrador).
-  return state.registrationOpen?.[teamId]===false || !!state.registrationClosedTeams?.[teamId] || teamPlayedCount(teamId)>=5;
+  const closed=state.registrationClosedTeams||{};
+  // Las claves antiguas (solo el ID del equipo) pertenecen al primer torneo: valen mientras no se haya archivado ninguno.
+  const legacy=(state.tournaments||[]).length===0 && !!closed[teamId];
+  return state.registrationOpen?.[teamId]===false || !!closed[closureKey(teamId)] || legacy || teamPlayedCount(teamId)>=5;
 }
 function latestResultRound(){
   return Math.max(0,...state.matches.filter(m=>m.phase!=='recopa'&&isPlayed(m)).map(matchRound));
@@ -944,7 +1055,7 @@ function resultIsLocked(m){
 function sealCompetitionRules(){
   state.registrationClosedTeams=state.registrationClosedTeams||{};
   // Al llegar a 5 partidos disputados se marca el cierre para conservarlo en Firebase.
-  state.teams.forEach(t=>{if(registrationClosed(t.id))state.registrationClosedTeams[t.id]=true;});
+  state.teams.forEach(t=>{if(registrationClosed(t.id))state.registrationClosedTeams[closureKey(t.id)]=true;});
   state.resultRoundReached=latestResultRound();
   state.matches.forEach(m=>{if(resultIsLocked(m))m.resultLocked=true;});
 }
@@ -1086,7 +1197,6 @@ document.querySelectorAll('.tab-btn').forEach(b=>{
     if(b.dataset.tab==='partidos') fillTeamSelects();
     if(b.dataset.tab==='resultados') renderResultados();
     if(b.dataset.tab==='eliminatorias') renderBracket();
-    if(b.dataset.tab==='auditoria')
     if(b.dataset.tab==='goleadores') renderGoals();
     if(b.dataset.tab==='transferencias'){ renderWindows(); renderTransfers(); }
     if(b.dataset.tab==='disciplina'){ renderCards(); renderFines(); }
@@ -1352,6 +1462,76 @@ function deleteArchivedTournament(id){
   state.tournaments=state.tournaments.filter(x=>x.id!==id);
   persist(); renderTournamentManager();
 }
+// ---- torneos archivados: detalle y exportación ----
+function archivedTournament(id){ return (state.tournaments||[]).find(x=>x.id===id) || null; }
+function archivedTeamName(t,id){
+  if(!id) return 'Por definir';
+  const team=(t.teams||[]).find(x=>String(x.id)===String(id));
+  return team ? team.name : 'Equipo eliminado';
+}
+function archivedPlayer(t,id){ return (t.players||[]).find(x=>x.id===id) || null; }
+function archivedPhaseLabel(m){
+  const label=isGroupPhase(m.phase) ? 'Fase de grupos' : (PHASES[m.phase] || (m.phase==='interserial'?'Interserial':String(m.phase||'')));
+  const round=Number(m.roundNumber);
+  return (Number.isSafeInteger(round)&&round>0 ? 'Fecha '+round+' · ' : '')+label+(m.phase==='octavos'&&m.leg?(m.leg===2?' · Vuelta':' · Ida'):'');
+}
+function archivedScorers(t){
+  const totals={};
+  (t.goals||[]).forEach(g=>{ totals[g.player]=(totals[g.player]||0)+(Number(g.goals)||0); });
+  return Object.entries(totals).map(([pid,tot])=>{
+    const p=archivedPlayer(t,pid);
+    return {name:p?p.name:'Jugador eliminado', team:p?archivedTeamName(t,p.team):'—', tot};
+  }).sort((a,b)=>b.tot-a.tot);
+}
+function archivedMatchesSorted(t){
+  return [...(t.matches||[])].sort((a,b)=>(Number(a.roundNumber)||999)-(Number(b.roundNumber)||999) || (a.date||'9999').localeCompare(b.date||'9999') || (a.time||'99:99').localeCompare(b.time||'99:99'));
+}
+function openArchivedTournament(id){
+  const t=archivedTournament(id); if(!t) return;
+  const teams=t.teams||[], matches=t.matches||[];
+  const hasGroups=teams.some(x=>x.group==='A'||x.group==='B');
+  const protest=standingsFrom(teams,matches).some(r=>r.protest);
+  const tables = hasGroups
+    ? ['A','B'].map(g=>`<p class="fase-h">Grupo ${g}</p>${standingsTable(standingsFrom(teams,matches,g))}`).join('')
+    : standingsTable(standingsFrom(teams,matches));
+  const played=archivedMatchesSorted(t).filter(isPlayed);
+  const results=played.length ? played.map(m=>{
+    const o=matchOutcome(m), w=o?o.w:null, pens=hasPens(m), b=x=>(x&&x===w)?'b':'';
+    const sc=(v,p)=>v+(pens?'<sup>('+p+')</sup>':'');
+    return `<div class="mrow" style="cursor:default"><div class="mdate">${fmtDate(m.date)}</div><div class="mteams"><div class="${b(m.home)}">${esc(archivedTeamName(t,m.home))}</div><div class="${b(m.away)}">${esc(archivedTeamName(t,m.away))}</div></div><div class="mmid">${esc(archivedPhaseLabel(m))}${m.wo?' · W.O.':''}</div><div class="mscore"><div class="${b(m.home)}">${sc(m.hscore,m.hpen)}</div><div class="${b(m.away)}">${sc(m.ascore,m.apen)}</div></div></div>`;
+  }).join('') : '<p class="empty">Sin resultados cargados.</p>';
+  const scorers=archivedScorers(t);
+  const scorersHtml=scorers.length ? `<div class="table-wrap"><table><thead><tr><th>Jugador</th><th>Equipo</th><th class="num">Goles</th></tr></thead><tbody>${scorers.map(r=>`<tr><td class="team-a">${esc(r.name)}</td><td>${esc(r.team)}</td><td class="num" style="font-weight:700;color:var(--primary)">${r.tot}</td></tr>`).join('')}</tbody></table></div>` : '<p class="empty">Sin goles cargados.</p>';
+  document.getElementById('detail-body').innerHTML=`
+    <h2 style="margin:0 0 4px">${esc(t.name||'Torneo')}</h2>
+    <p class="empty" style="margin:0">Campeón: <strong>${esc(archivedTeamName(t,t.champion))}</strong>${t.finishedAt?' · Finalizado el '+esc(fmtDateFull(String(t.finishedAt).slice(0,10))):''}</p>
+    <p class="fase-h">Tabla de posiciones</p>${tables}${protest?'<p class="empty">* Tiene un partido protestado</p>':''}
+    <p class="fase-h">Resultados</p>${results}
+    <p class="fase-h">Goleadores</p>${scorersHtml}
+    <div class="row" style="margin-top:12px"><button class="btn small" onclick="exportArchivedTournament('${esc(t.id)}')">Exportar a Excel</button></div>`;
+  openModal('detail-modal');
+}
+function exportArchivedTournament(id){
+  const t=archivedTournament(id); if(!t) return;
+  const teams=t.teams||[], matches=archivedMatchesSorted(t);
+  const wb=XLSX.utils.book_new();
+  const add=(rows,sheet)=>XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length?rows:[{}]), sheet);
+  add([{Torneo:t.name||'Torneo', Campeon:archivedTeamName(t,t.champion), Finalizado:t.finishedAt||''}],'Resumen');
+  add([...teams].sort(alphaName).map(x=>({Equipo:x.name, Grupo:x.group||'', Telefono:x.phone||'', Email:x.email||''})),'Equipos');
+  add([...(t.players||[])].sort(alphaName).map(p=>{ const r={Jugador:p.name, Equipo:archivedTeamName(t,p.team)}; if(isAdmin) r['N.º de cédula']=p.document||''; return r; }),'Jugadores');
+  add(matches.map(m=>({Jornada:m.roundNumber||'', Fecha:m.date||'', Comienzo:m.time||'', Finalizacion:m.endTime||'', W_O:m.wo?'Sí':'No', Fase:archivedPhaseLabel(m), Local:archivedTeamName(t,m.home), Visitante:archivedTeamName(t,m.away), GolesLocal:m.hscore, GolesVisitante:m.ascore, PenalesLocal:m.hpen, PenalesVisitante:m.apen, Protestado:m.protest?'Sí':'No'})),'Partidos');
+  add(archivedScorers(t).map(r=>({Jugador:r.name, Equipo:r.team, Goles:r.tot})),'Goleadores');
+  add((t.cards||[]).map(c=>{ const p=archivedPlayer(t,c.player); return {Jugador:p?p.name:'Jugador eliminado', Equipo:p?archivedTeamName(t,p.team):'—', Tipo:c.type}; }),'Tarjetas');
+  add((t.fines||[]).map(f=>{ const p=archivedPlayer(t,f.player); return {Jugador:p?p.name:'Jugador eliminado', Monto:f.amount, Motivo:f.reason||'', Estado:f.status}; }),'Multas');
+  const toRow=r=>({Equipo:r.name, PJ:r.pj, G:r.g, E:r.e, P:r.p, GF:r.gf, GC:r.gc, DG:r.dg, Pts:r.pts, Protestado:r.protest?'Sí':'No'});
+  if(teams.some(x=>x.group==='A'||x.group==='B')){
+    add(standingsFrom(teams,matches,'A').map(toRow),'Tabla Grupo A');
+    add(standingsFrom(teams,matches,'B').map(toRow),'Tabla Grupo B');
+  } else add(standingsFrom(teams,matches).map(toRow),'Tabla');
+  const slug=String(t.name||'torneo').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-zA-Z0-9]+/g,'-').replace(/^-+|-+$/g,'').toLowerCase()||'torneo';
+  const out=XLSX.write(wb,{bookType:'xlsx',type:'array'});
+  saveBlob(new Blob([out],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}), 'liga-'+slug+'.xlsx');
+}
 function renderTournamentManager(){
   const nameEl=document.getElementById('tournament-name');
   if(nameEl) nameEl.value=state.settings.tournamentName||'Torneo actual';
@@ -1363,7 +1543,7 @@ function renderTournamentManager(){
   const h=document.getElementById('tournament-history');
   if(h){
     const list=[...(state.tournaments||[])].reverse();
-    h.innerHTML=list.length ? '<p class="fase-h">Torneos guardados</p>'+list.map(t=>`<div class="row" style="justify-content:space-between;border-bottom:1px solid var(--border);padding:6px 0;gap:8px"><span style="flex:1">${esc(t.name||'Torneo')}<br><span class="empty">Campeón: ${esc(teamName(t.champion))}</span></span><span class="empty">${esc(t.finishedAt||'')}</span><button class="link danger" style="font-size:11px;padding:2px 5px" onclick="deleteArchivedTournament('${t.id}')">Borrar</button></div>`).join('') : '<p class="empty">Todavía no hay torneos archivados.</p>';
+    h.innerHTML=list.length ? '<p class="fase-h">Torneos guardados</p>'+list.map(t=>`<div class="row" style="justify-content:space-between;border-bottom:1px solid var(--border);padding:6px 0;gap:8px"><span style="flex:1">${esc(t.name||'Torneo')}<br><span class="empty">Campeón: ${esc(teamName(t.champion))}</span></span><span class="empty">${esc(t.finishedAt||'')}</span><button class="link" style="font-size:11px;padding:2px 5px" onclick="openArchivedTournament('${t.id}')">Ver</button><button class="link" style="font-size:11px;padding:2px 5px" onclick="exportArchivedTournament('${t.id}')">Excel</button><button class="link danger" style="font-size:11px;padding:2px 5px" onclick="deleteArchivedTournament('${t.id}')">Borrar</button></div>`).join('') : '<p class="empty">Todavía no hay torneos archivados.</p>';
   }
 }
 function finishTournament(){
@@ -1380,25 +1560,42 @@ function finishTournament(){
     windows:JSON.parse(JSON.stringify(state.windows||[])), transfers:JSON.parse(JSON.stringify(state.transfers||[])),
     bracketOrder:JSON.parse(JSON.stringify(state.bracketOrder||{})), settings:JSON.parse(JSON.stringify(state.settings||{}))
   };
+  // Lo que NO se reinicia: las fechas de suspensión que a cada jugador le faltan cumplir y las multas sin pagar.
+  const carriedSusp={}, carriedYel={};
+  new Set([...state.cards.map(c=>c.player),...Object.keys(state.carriedSuspensions||{}),...Object.keys(state.carriedYellows||{})]).forEach(pid=>{
+    const mine=state.cards.filter(c=>c.player===pid), red=mine.filter(c=>c.type==='Roja').length, yel=mine.length-red;
+    const pending=suspensionInfo(pid,yel,red).pending;
+    if(pending>0) carriedSusp[pid]=pending;
+    // Amarillas sueltas: las que sobran después de formar fechas de suspensión (3 amarillas = 1 fecha).
+    const loose=(yel+(parseInt(state.carriedYellows?.[pid])||0))%YELLOWS_PER_SUSPENSION;
+    if(loose>0) carriedYel[pid]=loose;
+  });
+  const carriedFines=state.fines.filter(f=>f.status!=='Pagada').map(f=>({...JSON.parse(JSON.stringify(f)),carriedFrom:f.carriedFrom||name}));
   state.tournaments=state.tournaments||[];
   state.tournaments.push(archive);
   const previousChampion = state.settings.pendingRecopaChampion || null;
   state.settings.tournamentName='Nuevo torneo';
   state.settings.activeTournamentId='tor-'+Date.now().toString(36);
   state.registrationOpen={};state.registrationClosedTeams={};state.resultRoundReached=0;
-  state.matches=[]; state.goals=[]; state.cards=[]; state.fines=[]; state.windows=[]; state.transfers=[];
+  // Las tarjetas y los descuentos del torneo que terminó se reinician; las fechas pendientes y las multas sin pagar pasan al nuevo.
+  state.suspensionsServed={};state.disciplineResolvedCards={};state.carriedSuspensions=carriedSusp;state.carriedYellows=carriedYel;
+  state.matches=[]; state.goals=[]; state.cards=[]; state.fines=carriedFines; state.windows=[]; state.transfers=[];
   state.bracketOrder={octavos:[0,1,2,3,4,5,6,7],oro_cuartos:[0,1,2,3],plata_cuartos:[0,1,2,3]};
   // Nueva temporada: ventana de transferencias abierta desde el inicio.
   state.windows.push({id:'w'+Date.now(),name:'Ventana inicial — '+state.settings.tournamentName,open:true});
   // La Recopa enfrenta al campeón del torneo anterior con el campeón recién terminado.
   // Se crea al comenzar el nuevo torneo, para que quede en la pestaña Eliminatorias.
   if(previousChampion && previousChampion!==champion){
-    state.matches.push({id:'rec'+Date.now(),phase:'recopa',slot:0,leg:1,date:'',time:'',home:previousChampion,away:champion,hscore:null,ascore:null,hpen:null,apen:null,protest:false});
+    state.matches.push({id:'rec'+Date.now(),phase:'recopa',slot:0,leg:1,date:'',time:'',home:previousChampion,away:champion,hscore:null,ascore:null,hpen:null,apen:null,protest:false,tournamentId:state.settings.activeTournamentId});
   }
   state.settings.pendingRecopaChampion=champion;
   state.settings.pendingRecopaTournament=name;
   persist(); renderAll(); renderTournamentManager();
-  alert(`Torneo guardado. Comenzó "${state.settings.tournamentName}" y las transferencias quedaron abiertas nuevamente.`);
+  const nSusp=Object.keys(carriedSusp).length, nFines=carriedFines.length, nYel=Object.keys(carriedYel).length;
+  alert(`Torneo guardado. Comenzó "${state.settings.tournamentName}" y las transferencias quedaron abiertas nuevamente.`+
+    (nSusp?`\nPasan al torneo nuevo ${nSusp} jugador${nSusp===1?'':'es'} con fechas de suspensión pendientes.`:'')+
+    (nYel?`\nPasan al torneo nuevo las amarillas sueltas de ${nYel} jugador${nYel===1?'':'es'}.`:'')+
+    (nFines?`\nPasan al torneo nuevo ${nFines} multa${nFines===1?'':'s'} sin pagar.`:''));
 }
 function generateRecopa(){
   if(!isAdmin) return;
@@ -2128,7 +2325,11 @@ function deleteCard(id){
 }
 const YELLOWS_PER_SUSPENSION = 3;
 function suspensionInfo(pid, amarillas, rojas){
-  const total = rojas + Math.floor(amarillas/YELLOWS_PER_SUSPENSION);
+  // carriedSuspensions: fechas que el jugador debía cumplir al terminar el torneo anterior.
+  const carried = Math.max(0, parseInt(state.carriedSuspensions?.[pid])||0);
+  // carriedYellows: amarillas sueltas (que no llegaron a una fecha) del torneo anterior; se suman a las nuevas.
+  const carriedY = Math.max(0, parseInt(state.carriedYellows?.[pid])||0);
+  const total = rojas + Math.floor((amarillas+carriedY)/YELLOWS_PER_SUSPENSION) + carried;
   const adjust = state.suspensionsServed[pid] || 0;
   const pending = Math.max(0, total + adjust);
   return {total, pending};
@@ -2153,10 +2354,11 @@ function renderCards(){
     if(!totals[c.player]) totals[c.player] = {amarillas:0, rojas:0};
     if(c.type==='Roja') totals[c.player].rojas++; else totals[c.player].amarillas++;
   });
-  const rows = Object.entries(totals).map(([pid,t])=>({pid, name:playerName(pid), team:teamName(playerTeam(pid)), ...t, ...suspensionInfo(pid,t.amarillas,t.rojas)})).filter(r=>!disciplineResolved(r.pid,r.pending));
+  [...Object.keys(state.carriedSuspensions||{}),...Object.keys(state.carriedYellows||{})].forEach(pid=>{ if(!totals[pid]) totals[pid]={amarillas:0, rojas:0}; });
+  const rows = Object.entries(totals).map(([pid,t])=>({pid, name:playerName(pid), team:teamName(playerTeam(pid)), ...t, amarillasTot:t.amarillas+(parseInt(state.carriedYellows?.[pid])||0), ...suspensionInfo(pid,t.amarillas,t.rojas)})).filter(r=>!disciplineResolved(r.pid,r.pending));
   const el = document.getElementById('cards-list');
   el.innerHTML = rows.length? `<p class="empty"></p><div class="table-wrap"><table><thead><tr><th>Jugador</th><th>Equipo</th><th class="num">🟨</th><th class="num">🟥</th><th>Estado</th><th class="num">Fechas pend.</th><th></th></tr></thead><tbody>
-    ${rows.map(r=>`<tr><td class="team-a">${esc(r.name)}</td><td>${esc(r.team)}</td><td class="num">${r.amarillas||'—'}</td><td class="num">${r.rojas||'—'}</td>
+    ${rows.map(r=>`<tr><td class="team-a">${esc(r.name)}</td><td>${esc(r.team)}</td><td class="num">${r.amarillasTot||'—'}</td><td class="num">${r.rojas||'—'}</td>
       <td><span class="badge ${r.pending>0?'pending':'ok'}">${r.pending>0?'Suspendido':'Habilitado'}</span></td>
       <td class="num">${isAdmin?`<input type="number" min="0" id="pend-${r.pid}" value="${r.pending}" style="width:54px;margin-bottom:0" onchange="setPendingSuspension('${r.pid}',${r.total})">`:(r.pending||'—')}</td>
       <td class="actions admin-only">${isAdmin?(r.pending>0?`<button class="link" onclick="serveSuspension('${r.pid}')">-1 fecha</button>`:hasUnpaidFine(r.pid)?'<span class="empty">Multa pendiente</span>':`<button class="link danger" onclick="resolveDiscipline('${r.pid}')">Quitar de la lista</button>`):''}</td>
@@ -2173,7 +2375,7 @@ function disciplineResolved(pid,pending){
 async function resolveDiscipline(pid){
   if(!isAdmin) return;
   const cards = state.cards.filter(c=>c.player===pid);
-  if(!cards.length) return;
+  if(!cards.length && !state.carriedSuspensions?.[pid] && !state.carriedYellows?.[pid]) return;
   const red = cards.filter(c=>c.type==='Roja').length;
   if(suspensionInfo(pid,cards.length-red,red).pending>0) return alert('El jugador todavía tiene fechas pendientes.');
   if(hasUnpaidFine(pid)) return alert('Primero marcá sus multas como pagadas.');
@@ -2207,7 +2409,7 @@ function renderFines(){
   const el = document.getElementById('fines-list');
   el.innerHTML = state.fines.length? `<div class="table-wrap"><table><thead><tr><th>Jugador</th><th>Motivo</th><th class="num">Monto</th><th>Estado</th><th></th></tr></thead><tbody>
     ${state.fines.map(f=>`<tr>
-      <td class="team-a">${esc(playerName(f.player))}</td><td>${esc(f.reason)||'—'}</td><td class="num">$${f.amount}</td>
+      <td class="team-a">${esc(playerName(f.player))}</td><td>${esc(f.reason)||'—'}${f.carriedFrom?`<br><span class="empty">Del torneo: ${esc(f.carriedFrom)}</span>`:''}</td><td class="num">$${f.amount}</td>
       <td><span class="badge ${f.status==='Pagada'?'ok':'pending'}">${f.status}</span></td>
       <td class="actions admin-only">${f.status==='Pagada'?'':`<button class="link" onclick="markFinePaid('${f.id}')">Marcar pagada</button>`}<button class="link danger" onclick="deleteFine('${f.id}')">Borrar</button></td>
     </tr>`).join('')}
@@ -2363,11 +2565,13 @@ function renderTransfers(){
 }
 
 // ---- standings ----
-function computeStandings(group){
-  const teams = group ? state.teams.filter(t=>t.group===group) : state.teams;
+function computeStandings(group){ return standingsFrom(state.teams, state.matches, group); }
+// Misma tabla de posiciones, pero sobre cualquier lista de equipos y partidos (también torneos archivados).
+function standingsFrom(allTeams, allMatches, group){
+  const teams = group ? allTeams.filter(t=>t.group===group) : allTeams;
   const stats = {};
   teams.forEach(t=> stats[t.id] = {id:t.id, name:t.name, pj:0,g:0,e:0,p:0,gf:0,gc:0,protest:false});
-  state.matches.forEach(m=>{
+  allMatches.forEach(m=>{
     if(!isGroupPhase(m.phase) && m.phase!=='interserial') return;
     if(!isPlayed(m)) return;
     const h = stats[m.home], a = stats[m.away];
@@ -2607,7 +2811,7 @@ function buildSecurityRules(adminUid){
   const playerWrite="("+admin+" && (data.exists() || root.child('liga-data/registrationClosedTeams').child(newData.child('team').val()).val() !== true)) || ("+delegateCreate+")";
   const field=(condition)=>({'.validate':'('+admin+') || ('+condition+')'});
   const areaWrite={};
-  ['teams','goals','windows','transfers','cards','fines','settings','tournaments','bracketOrder','reglamento','suspensionsServed','resultRoundReached'].forEach(k=>areaWrite[k]={'.write':admin});
+  ['teams','goals','windows','transfers','cards','fines','settings','tournaments','bracketOrder','reglamento','suspensionsServed','resultRoundReached','schemaVersion','disciplineResolvedCards','carriedSuspensions','carriedYellows'].forEach(k=>areaWrite[k]={'.write':admin});
   areaWrite.matches={'$matchIndex':{'.write':admin+" && (!data.exists() || data.child('resultLocked').val() !== true || (newData.child('hscore').val() === data.child('hscore').val() && newData.child('ascore').val() === data.child('ascore').val() && newData.child('hpen').val() === data.child('hpen').val() && newData.child('apen').val() === data.child('apen').val() && newData.child('home').val() === data.child('home').val() && newData.child('away').val() === data.child('away').val() && newData.child('phase').val() === data.child('phase').val() && newData.child('resultLocked').val() === data.child('resultLocked').val()))"}};
   areaWrite.registrationClosedTeams={
     '$team':{'.write':admin+" && newData.val() === true",'.validate':'newData.val() === true'}
